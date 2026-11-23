@@ -25,23 +25,11 @@ public class HomeSettings : CommandSettings
 
 public static class Ctx
 {
-    private static string PointerFile =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Saddlebag", "home.txt");
+    public static string ResolveHome(string? explicitHome) =>
+        HomeLocator.TryResolve(explicitHome)
+        ?? throw new InvalidOperationException("No Saddlebag folder yet. Run `saddlebag init --game <RDR2 folder> --home <folder on the same drive>`.");
 
-    public static string ResolveHome(string? explicitHome)
-    {
-        if (!string.IsNullOrWhiteSpace(explicitHome)) return Path.GetFullPath(explicitHome);
-        var env = Environment.GetEnvironmentVariable("SADDLEBAG_HOME");
-        if (!string.IsNullOrWhiteSpace(env)) return Path.GetFullPath(env);
-        if (File.Exists(PointerFile)) return File.ReadAllText(PointerFile).Trim();
-        throw new InvalidOperationException("No Saddlebag folder yet. Run `saddlebag init --game <RDR2 folder> --home <folder on the same drive>`.");
-    }
-
-    public static void RememberHome(string home)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(PointerFile)!);
-        File.WriteAllText(PointerFile, home);
-    }
+    public static void RememberHome(string home) => HomeLocator.Remember(home);
 
     public static Workspace Open(HomeSettings s)
     {

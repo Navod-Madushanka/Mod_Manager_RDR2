@@ -1,0 +1,47 @@
+<UserControl x:Class="Saddlebag.App.Views.PlanPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <DockPanel Margin="12">
+    <StackPanel DockPanel.Dock="Top">
+      <TextBlock Text="Deploy" Style="{StaticResource H1}"/>
+      <TextBlock Style="{StaticResource Hint}" Text="Exactly what the next deploy will do. Originals a mod replaces are backed up first; a crash mid-way is finished on the next start."/>
+      <StackPanel Orientation="Horizontal" Margin="0,12,0,8">
+        <Button Content="Deploy" Style="{StaticResource PrimaryButton}" Command="{Binding DeployCommand}" IsEnabled="{Binding CanApply}"/>
+        <Button Content="Refresh plan" Command="{Binding RefreshCommand}"/>
+        <Button Content="Purge everything…" Command="{Binding PurgeCommand}"/>
+        <CheckBox Content="Ignore dependency checks" IsChecked="{Binding IgnoreDeps}" VerticalAlignment="Center" Margin="8,0,0,0"
+                  ToolTip="Deploy even if, say, an .asi seems to lack Script Hook. Only if you know it doesn't need it."/>
+      </StackPanel>
+      <TextBlock Text="{Binding Summary}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+      <ItemsControl ItemsSource="{Binding Checks}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Border BorderThickness="3,0,0,0" BorderBrush="{Binding Severity, Converter={StaticResource LevelBrush}}" Padding="8,3" Margin="0,0,0,4" Background="{StaticResource Panel}">
+              <StackPanel>
+                <TextBlock TextWrapping="Wrap">
+                  <Run Text="{Binding Severity, Mode=OneWay}" FontWeight="SemiBold" Foreground="{Binding Severity, Converter={StaticResource LevelBrush}}"/>
+                  <Run Text="{Binding Id, Mode=OneWay}" Foreground="{StaticResource Muted}"/>
+                  <Run Text="{Binding Message, Mode=OneWay}"/>
+                </TextBlock>
+                <TextBlock Text="{Binding Hint}" Style="{StaticResource Hint}" Visibility="{Binding Hint, Converter={StaticResource NullToVis}}"/>
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+      <ItemsControl ItemsSource="{Binding Blockers}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate><TextBlock Text="{Binding}" Foreground="{StaticResource BadBrush}" TextWrapping="Wrap"/></DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+    <DataGrid ItemsSource="{Binding Steps}" Margin="0,8,0,0">
+      <DataGrid.Columns>
+        <DataGridTextColumn Header="Step" Binding="{Binding Action}"/>
+        <DataGridTextColumn Header="Game path" Binding="{Binding Dest}" Width="2*"/>
+        <DataGridTextColumn Header="Mod" Binding="{Binding Mod}" Width="*"/>
+        <DataGridTextColumn Header="Detail" Binding="{Binding Detail}" Width="*"/>
+      </DataGrid.Columns>
+    </DataGrid>
+  </DockPanel>
+</UserControl>

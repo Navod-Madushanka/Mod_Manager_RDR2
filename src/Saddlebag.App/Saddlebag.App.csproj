@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Thin WPF views over Saddlebag.App.ViewModels. Windows-only at run time; builds anywhere with EnableWindowsTargeting. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>Saddlebag</AssemblyName>
+    <RootNamespace>Saddlebag.App</RootNamespace>
+    <Version>0.5.0</Version>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Saddlebag.App.ViewModels\Saddlebag.App.ViewModels.csproj" />
+  </ItemGroup>
+
+</Project>

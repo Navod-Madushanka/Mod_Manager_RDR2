@@ -1,5 +1,7 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Saddlebag.App.ViewModels/Saddlebag.App.ViewModels.csproj" />
+    <Project Path="src/Saddlebag.App/Saddlebag.App.csproj" />
     <Project Path="src/Saddlebag.Cli/Saddlebag.Cli.csproj" />
     <Project Path="src/Saddlebag.Core/Saddlebag.Core.csproj" />
   </Folder>

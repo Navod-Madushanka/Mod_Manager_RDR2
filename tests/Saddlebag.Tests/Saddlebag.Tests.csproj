@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Saddlebag.Core\Saddlebag.Core.csproj" />
+    <ProjectReference Include="..\..\src\Saddlebag.App.ViewModels\Saddlebag.App.ViewModels.csproj" />
   </ItemGroup>
 
 </Project>

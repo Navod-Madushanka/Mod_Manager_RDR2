@@ -1,0 +1,60 @@
+<UserControl x:Class="Saddlebag.App.Views.LogsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Grid Margin="12">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="2*"/>
+      <RowDefinition Height="6"/>
+      <RowDefinition Height="3*"/>
+    </Grid.RowDefinitions>
+    <StackPanel Grid.Row="0">
+      <TextBlock Text="Logs" Style="{StaticResource H1}"/>
+      <TextBlock Style="{StaticResource Hint}" Text="Every log in the game root, lml/ and scripts/. Errors naming one of your mods' files point at a first suspect. Logs Online mode moved out are listed as archive/…"/>
+      <StackPanel Orientation="Horizontal" Margin="0,10,0,8">
+        <Button Content="Refresh" Command="{Binding RefreshCommand}"/>
+        <Button Content="Archive mod logs" Command="{Binding ArchiveCommand}"/>
+      </StackPanel>
+    </StackPanel>
+    <DataGrid Grid.Row="1" ItemsSource="{Binding Logs}" SelectedItem="{Binding Selected}">
+      <DataGrid.Columns>
+        <DataGridTextColumn Header="Log" Binding="{Binding Display}" Width="2*"/>
+        <DataGridTextColumn Header="Probably from" Binding="{Binding Owner}" Width="*"/>
+        <DataGridTextColumn Header="Size" Binding="{Binding Size}"/>
+        <DataGridTextColumn Header="Modified" Binding="{Binding Modified, StringFormat=yyyy-MM-dd HH:mm}"/>
+        <DataGridTextColumn Header="Errors" Binding="{Binding Errors}"/>
+        <DataGridTextColumn Header="Warnings" Binding="{Binding Warnings}"/>
+        <DataGridTextColumn Header="Errors mention" Binding="{Binding Mentions}" Width="*"/>
+      </DataGrid.Columns>
+    </DataGrid>
+    <GridSplitter Grid.Row="2" Height="6" HorizontalAlignment="Stretch"/>
+    <DockPanel Grid.Row="3">
+      <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,4,0,6">
+        <CheckBox Content="Errors only" IsChecked="{Binding ErrorsOnly}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+        <TextBlock Text="Filter:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+        <TextBox Text="{Binding Filter, UpdateSourceTrigger=PropertyChanged, Delay=300}" Width="200" Margin="0,0,12,0"/>
+        <Button Command="{Binding ToggleFollowCommand}">
+          <Button.Style>
+            <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+              <Setter Property="Content" Value="Follow live"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding IsFollowing}" Value="True"><Setter Property="Content" Value="Stop following"/></DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Button.Style>
+        </Button>
+      </StackPanel>
+      <ListBox ItemsSource="{Binding Lines}" FontFamily="Consolas" FontSize="12" VirtualizingPanel.IsVirtualizing="True">
+        <ListBox.ItemTemplate>
+          <DataTemplate>
+            <TextBlock>
+              <Run Text="{Binding Number, Mode=OneWay}" Foreground="{StaticResource Muted}"/>
+              <Run Text="{Binding Text, Mode=OneWay}" Foreground="{Binding Level, Converter={StaticResource LevelBrush}}"/>
+              <Run Text="{Binding Mentions, Mode=OneWay}" Foreground="#8250DF"/>
+            </TextBlock>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </DockPanel>
+  </Grid>
+</UserControl>

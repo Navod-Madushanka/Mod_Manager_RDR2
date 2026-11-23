@@ -1,0 +1,55 @@
+<UserControl x:Class="Saddlebag.App.Views.ModePage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <DockPanel Margin="12">
+    <StackPanel DockPanel.Dock="Top">
+      <TextBlock Text="Online mode" Style="{StaticResource H1}"/>
+      <TextBlock Style="{StaticResource Hint}" Text="Going Online removes every tracked mod file, restores originals, then checks the whole folder against your clean baseline. Green means the folder matches; it never means safe from bans."/>
+      <StackPanel Orientation="Horizontal" Margin="0,12,0,8">
+        <Button Content="Go Online" Style="{StaticResource PrimaryButton}" Command="{Binding GoOnlineCommand}"/>
+        <Button Content="Back to Story" Command="{Binding GoStoryCommand}"/>
+        <Button Content="Verify only" Command="{Binding VerifyCommand}"/>
+        <CheckBox Content="Deep (hash every file)" IsChecked="{Binding Deep}" VerticalAlignment="Center" Margin="8,0,0,0"/>
+      </StackPanel>
+      <Border Padding="12,8" CornerRadius="4" BorderThickness="2" Margin="0,4,0,4"
+              BorderBrush="{Binding Status, Converter={StaticResource LevelBrush}}">
+        <StackPanel>
+          <TextBlock Text="{Binding StatusText}" FontSize="16" FontWeight="Bold" Foreground="{Binding Status, Converter={StaticResource LevelBrush}}"/>
+          <TextBlock Text="{Binding Summary}" Style="{StaticResource Hint}"/>
+        </StackPanel>
+      </Border>
+      <StackPanel Orientation="Horizontal" Margin="0,8,0,4" Visibility="{Binding Findings.Count, Converter={StaticResource CountToVis}}">
+        <TextBlock Text="Findings" Style="{StaticResource H2}" Margin="0,0,12,0" VerticalAlignment="Center"/>
+        <Button Content="Adopt ticked files as a mod" Command="{Binding AdoptSelectedCommand}"/>
+      </StackPanel>
+    </StackPanel>
+    <DataGrid ItemsSource="{Binding Findings}" Visibility="{Binding Findings.Count, Converter={StaticResource CountToVis}}">
+      <DataGrid.Columns>
+        <DataGridTemplateColumn Header="">
+          <DataGridTemplateColumn.CellTemplate>
+            <DataTemplate><CheckBox IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanAdopt}" VerticalAlignment="Center"/></DataTemplate>
+          </DataGridTemplateColumn.CellTemplate>
+        </DataGridTemplateColumn>
+        <DataGridTemplateColumn Header="Finding">
+          <DataGridTemplateColumn.CellTemplate>
+            <DataTemplate><TextBlock Text="{Binding Kind}" Foreground="{Binding Severity, Converter={StaticResource LevelBrush}}" FontWeight="SemiBold" VerticalAlignment="Center"/></DataTemplate>
+          </DataGridTemplateColumn.CellTemplate>
+        </DataGridTemplateColumn>
+        <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="2*"/>
+        <DataGridTextColumn Header="Detail" Binding="{Binding Detail}" Width="*"/>
+        <DataGridTemplateColumn Header="">
+          <DataGridTemplateColumn.CellTemplate>
+            <DataTemplate>
+              <StackPanel Orientation="Horizontal">
+                <Button Content="Allow" Style="{StaticResource RowButton}" Visibility="{Binding CanAllow, Converter={StaticResource BoolToVis}}"
+                        Command="{Binding DataContext.AllowCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"/>
+                <Button Content="Expected" Style="{StaticResource RowButton}" Visibility="{Binding CanExpect, Converter={StaticResource BoolToVis}}"
+                        Command="{Binding DataContext.ExpectCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"/>
+              </StackPanel>
+            </DataTemplate>
+          </DataGridTemplateColumn.CellTemplate>
+        </DataGridTemplateColumn>
+      </DataGrid.Columns>
+    </DataGrid>
+  </DockPanel>
+</UserControl>

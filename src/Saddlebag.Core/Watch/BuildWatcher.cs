@@ -112,11 +112,10 @@ public sealed class BuildWatcher
     /// <summary>Runs until cancelled: an initial sync, then a redeploy after each build.</summary>
     public void Run(CancellationToken ct)
     {
-        var watchers = _targets.Select(t => CreateWatcher(t.Folder)).ToList();
+        using var watchers = StartWatching();
         try
         {
             _report(new(WatchEventKind.Started, $"Watching {string.Join(", ", _targets.Select(t => t.Folder))}"));
-            lock (_gate) _state.Change(DateTime.UtcNow - _state.Quiet); // sync once at start
             while (!ct.IsCancellationRequested)
             {
                 Step();
@@ -125,9 +124,24 @@ public sealed class BuildWatcher
         }
         finally
         {
-            foreach (var w in watchers) w.Dispose();
             _report(new(WatchEventKind.Stopped, "Stopped watching."));
         }
+    }
+
+    /// <summary>
+    /// Starts the file system watchers and queues an initial sync, without a loop: for hosts (like the GUI) that call
+    /// <see cref="Step"/> on their own timer. Dispose the result to stop.
+    /// </summary>
+    public IDisposable StartWatching()
+    {
+        var watchers = _targets.Select(t => CreateWatcher(t.Folder)).ToList();
+        lock (_gate) _state.Change(DateTime.UtcNow - _state.Quiet);
+        return new Disposer(watchers);
+    }
+
+    private sealed class Disposer(List<FileSystemWatcher> watchers) : IDisposable
+    {
+        public void Dispose() { foreach (var w in watchers) w.Dispose(); }
     }
 
     /// <summary>One pass of the loop: check timing and the game, deploy if it's time.</summary>

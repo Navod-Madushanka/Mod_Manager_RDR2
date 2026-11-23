@@ -184,6 +184,7 @@ public class UpdateEvaluateTests
     }
 }
 
+[Collection("NexusKeyEnv")]
 public class UpdateCheckerTests : IDisposable
 {
     private readonly Sandbox _sb = new();

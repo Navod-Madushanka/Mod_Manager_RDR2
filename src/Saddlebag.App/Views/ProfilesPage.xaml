@@ -1,0 +1,36 @@
+<UserControl x:Class="Saddlebag.App.Views.ProfilesPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <DockPanel Margin="12">
+    <StackPanel DockPanel.Dock="Top">
+      <TextBlock Text="Profiles" Style="{StaticResource H1}"/>
+      <TextBlock Style="{StaticResource Hint}" Text="Named sets of enabled mods with their own order, e.g. Story-Full and Story-Dev. Switching in Story mode moves only the files that differ."/>
+      <StackPanel Orientation="Horizontal" Margin="0,12,0,8">
+        <Button Content="New profile…" Command="{Binding CreateCommand}"/>
+      </StackPanel>
+    </StackPanel>
+    <DataGrid ItemsSource="{Binding Items}">
+      <DataGrid.Columns>
+        <DataGridTemplateColumn Header="">
+          <DataGridTemplateColumn.CellTemplate>
+            <DataTemplate><TextBlock Text="●" Foreground="{StaticResource GoodBrush}" Visibility="{Binding IsActive, Converter={StaticResource BoolToVis}}" VerticalAlignment="Center"/></DataTemplate>
+          </DataGridTemplateColumn.CellTemplate>
+        </DataGridTemplateColumn>
+        <DataGridTextColumn Header="Profile" Binding="{Binding Name}" Width="*"/>
+        <DataGridTextColumn Header="Enabled mods" Binding="{Binding EnabledMods}"/>
+        <DataGridTemplateColumn Header="">
+          <DataGridTemplateColumn.CellTemplate>
+            <DataTemplate>
+              <StackPanel Orientation="Horizontal">
+                <Button Content="Switch" Style="{StaticResource RowButton}"
+                        Command="{Binding DataContext.SwitchCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"/>
+                <Button Content="Delete" Style="{StaticResource RowButton}"
+                        Command="{Binding DataContext.DeleteCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"/>
+              </StackPanel>
+            </DataTemplate>
+          </DataGridTemplateColumn.CellTemplate>
+        </DataGridTemplateColumn>
+      </DataGrid.Columns>
+    </DataGrid>
+  </DockPanel>
+</UserControl>

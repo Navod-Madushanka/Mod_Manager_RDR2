@@ -1,0 +1,133 @@
+<UserControl x:Class="Saddlebag.App.Views.ModsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Grid Margin="12">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="5*" MinWidth="380"/>
+      <ColumnDefinition Width="6"/>
+      <ColumnDefinition Width="6*"/>
+    </Grid.ColumnDefinitions>
+
+    <!-- Library, winner on top, with the drop zone -->
+    <DockPanel Grid.Column="0">
+      <Border DockPanel.Dock="Top" x:Name="DropZone" AllowDrop="True" Drop="DropZone_Drop" DragOver="DropZone_DragOver"
+              BorderBrush="{StaticResource Accent}" BorderThickness="2" CornerRadius="6" Padding="12" Margin="0,0,0,8" Background="{StaticResource Panel}">
+        <StackPanel>
+          <TextBlock Text="Drop mod archives or folders here" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+          <TextBlock Style="{StaticResource Hint}" HorizontalAlignment="Center" Text="They go into the library, never straight into the game folder."/>
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,8,0,0">
+            <Button Content="Add archives…" Command="{Binding ImportFilesCommand}"/>
+            <Button Content="Add folder…" Command="{Binding ImportFolderCommand}"/>
+            <Button Content="Link build folder…" Command="{Binding LinkFolderCommand}" Margin="0"/>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+      <TextBlock DockPanel.Dock="Top" Style="{StaticResource Hint}" Margin="0,0,0,4" Text="Top of the list wins when two mods write the same file."/>
+      <DataGrid ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}">
+        <DataGrid.Columns>
+          <DataGridTemplateColumn Header="On">
+            <DataGridTemplateColumn.CellTemplate>
+              <DataTemplate>
+                <CheckBox IsChecked="{Binding Enabled, Mode=OneWay}" VerticalAlignment="Center"
+                          Command="{Binding DataContext.ToggleEnabledCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"/>
+              </DataTemplate>
+            </DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+          <DataGridTextColumn Header="Mod" Binding="{Binding Name}" Width="2*"/>
+          <DataGridTextColumn Header="Version" Binding="{Binding Version}"/>
+          <DataGridTextColumn Header="Files in game" Binding="{Binding DeployedFiles}"/>
+          <DataGridTextColumn Header="Questions" Binding="{Binding OpenQuestions}"/>
+          <DataGridTemplateColumn Header="">
+            <DataGridTemplateColumn.CellTemplate>
+              <DataTemplate>
+                <StackPanel Orientation="Horizontal">
+                  <Button Content="▲" ToolTip="Higher priority" Style="{StaticResource RowButton}"
+                          Command="{Binding DataContext.RaisePriorityCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"/>
+                  <Button Content="▼" ToolTip="Lower priority" Style="{StaticResource RowButton}"
+                          Command="{Binding DataContext.LowerPriorityCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"/>
+                  <Button Content="Remove" Style="{StaticResource RowButton}"
+                          Command="{Binding DataContext.RemoveCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"/>
+                </StackPanel>
+              </DataTemplate>
+            </DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+        </DataGrid.Columns>
+      </DataGrid>
+    </DockPanel>
+
+    <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch"/>
+
+    <!-- Staging: where each file goes, and why -->
+    <DockPanel Grid.Column="2" DataContext="{Binding Staging}" Margin="6,0,0,0">
+      <TextBlock DockPanel.Dock="Top" Style="{StaticResource Hint}" Text="Pick a mod to see where each of its files goes."
+                 Visibility="{Binding HasMod, Converter={StaticResource InverseBoolToVis}}"/>
+      <StackPanel DockPanel.Dock="Top" Visibility="{Binding HasMod, Converter={StaticResource BoolToVis}}">
+        <TextBlock Text="{Binding ModName}" Style="{StaticResource H1}"/>
+        <TextBlock Style="{StaticResource Hint}">
+          <Run Text="Package type:"/> <Run Text="{Binding PackageType, Mode=OneWay}"/> <Run Text="·"/> <Run Text="{Binding NexusText, Mode=OneWay}"/>
+        </TextBlock>
+        <WrapPanel Margin="0,8,0,8">
+          <Button Content="Enable" Command="{Binding EnableCommand}"/>
+          <Button Content="Package for LML (install.xml)" Command="{Binding PackForLmlCommand}"
+                  ToolTip="Loose stream files go into an LML package; fill the LML game path column for replacement files first."/>
+          <Button Content="Unpackage" Command="{Binding UnpackCommand}" Visibility="{Binding IsLmlPacked, Converter={StaticResource BoolToVis}}"/>
+          <Button Content="Link to Nexus…" Command="{Binding LinkNexusCommand}"/>
+          <Button Content="Unlink Nexus" Command="{Binding UnlinkNexusCommand}"/>
+        </WrapPanel>
+        <Border Style="{StaticResource Banner}" Background="#DDF4FF" BorderBrush="#54AEFF" Visibility="{Binding NeedsVariant, Converter={StaticResource BoolToVis}}">
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="This archive has several options:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <ComboBox ItemsSource="{Binding Variants}" SelectedItem="{Binding SelectedVariant}" Width="240" Margin="0,0,8,0"/>
+            <Button Content="Use this one" Command="{Binding ChooseVariantCommand}"/>
+          </StackPanel>
+        </Border>
+        <ItemsControl ItemsSource="{Binding Notes}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate><TextBlock Text="{Binding}" Foreground="{StaticResource WarnBrush}" TextWrapping="Wrap"/></DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+      <DataGrid ItemsSource="{Binding Rows}" IsReadOnly="False" Visibility="{Binding HasMod, Converter={StaticResource BoolToVis}}">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="Source" Binding="{Binding Source}" IsReadOnly="True" Width="*"/>
+          <DataGridTemplateColumn Header="Destination (type to change)" Width="*">
+            <DataGridTemplateColumn.CellTemplate>
+              <DataTemplate>
+                <TextBox Text="{Binding EditDest, UpdateSourceTrigger=PropertyChanged}" ToolTip="{Binding DestText}" BorderThickness="0" VerticalAlignment="Center"/>
+              </DataTemplate>
+            </DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+          <DataGridTextColumn Header="Rule" Binding="{Binding RuleId}" IsReadOnly="True"/>
+          <DataGridTemplateColumn Header="Confidence">
+            <DataGridTemplateColumn.CellTemplate>
+              <DataTemplate><TextBlock Text="{Binding Confidence}" Foreground="{Binding Confidence, Converter={StaticResource LevelBrush}}" VerticalAlignment="Center"/></DataTemplate>
+            </DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+          <DataGridTextColumn Header="Why" Binding="{Binding Reason}" IsReadOnly="True" Width="*"/>
+          <DataGridTemplateColumn Header="LML game path">
+            <DataGridTemplateColumn.CellTemplate>
+              <DataTemplate>
+                <TextBox Text="{Binding GamePath, UpdateSourceTrigger=PropertyChanged}" MinWidth="120" BorderThickness="0" VerticalAlignment="Center"
+                         ToolTip="Only for LML packaging, e.g. update:/x64/data/metadata/cameras.ymt"/>
+              </DataTemplate>
+            </DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+          <DataGridTemplateColumn Header="">
+            <DataGridTemplateColumn.CellTemplate>
+              <DataTemplate>
+                <StackPanel Orientation="Horizontal">
+                  <Button Content="Apply" Style="{StaticResource RowButton}"
+                          Command="{Binding DataContext.ApplyDestCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}" CommandParameter="{Binding}"/>
+                  <Button Content="Skip" Style="{StaticResource RowButton}"
+                          Command="{Binding DataContext.SkipCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}" CommandParameter="{Binding}"/>
+                  <Button Content="Reset" Style="{StaticResource RowButton}" Visibility="{Binding IsOverride, Converter={StaticResource BoolToVis}}"
+                          Command="{Binding DataContext.ClearOverrideCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}" CommandParameter="{Binding}"/>
+                </StackPanel>
+              </DataTemplate>
+            </DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+        </DataGrid.Columns>
+      </DataGrid>
+    </DockPanel>
+  </Grid>
+</UserControl>

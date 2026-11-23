@@ -1,0 +1,34 @@
+<UserControl x:Class="Saddlebag.App.Views.UpdatesPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <DockPanel Margin="12">
+    <StackPanel DockPanel.Dock="Top">
+      <TextBlock Text="Nexus updates" Style="{StaticResource H1}"/>
+      <TextBlock Style="{StaticResource Hint}" Text="Checks mods linked to Nexus for newer files. Read-only: nothing is downloaded. Results are cached for an hour."/>
+      <TextBlock Text="{Binding KeyStatus}" Margin="0,10,0,4" TextWrapping="Wrap"/>
+      <StackPanel Orientation="Horizontal" Margin="0,4,0,8">
+        <Button Content="Check for updates" Style="{StaticResource PrimaryButton}" Command="{Binding CheckCommand}"/>
+        <Button Content="Check now (skip cache)" Command="{Binding CheckFreshCommand}"/>
+        <Button Content="Set API key…" Command="{Binding SetKeyCommand}" Visibility="{Binding CanStoreKey, Converter={StaticResource BoolToVis}}"/>
+        <Button Content="Test key" Command="{Binding TestKeyCommand}"/>
+        <Button Content="Forget key" Command="{Binding ClearKeyCommand}" Visibility="{Binding CanStoreKey, Converter={StaticResource BoolToVis}}"/>
+      </StackPanel>
+      <TextBlock Text="{Binding LastRun}" Style="{StaticResource Hint}" Margin="0,0,0,8"/>
+      <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,6" Text="Double-click a mod to open its Nexus files page. Link mods to Nexus from the Mods page."/>
+    </StackPanel>
+    <DataGrid ItemsSource="{Binding Results}" x:Name="Grid" MouseDoubleClick="Grid_MouseDoubleClick">
+      <DataGrid.Columns>
+        <DataGridTextColumn Header="Mod" Binding="{Binding ModName}" Width="*"/>
+        <DataGridTemplateColumn Header="Status">
+          <DataGridTemplateColumn.CellTemplate>
+            <DataTemplate><TextBlock Text="{Binding Status}" Foreground="{Binding Status, Converter={StaticResource LevelBrush}}" FontWeight="SemiBold" VerticalAlignment="Center"/></DataTemplate>
+          </DataGridTemplateColumn.CellTemplate>
+        </DataGridTemplateColumn>
+        <DataGridTextColumn Header="Installed" Binding="{Binding InstalledVersion}"/>
+        <DataGridTextColumn Header="Latest" Binding="{Binding LatestVersion}"/>
+        <DataGridTextColumn Header="Latest file" Binding="{Binding LatestFile}" Width="*"/>
+        <DataGridTextColumn Header="Why" Binding="{Binding Detail}" Width="2*"/>
+      </DataGrid.Columns>
+    </DataGrid>
+  </DockPanel>
+</UserControl>

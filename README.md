@@ -9,6 +9,8 @@ Green means "the folder matches your baseline". It never means "safe from bans".
 ```text
 src/Saddlebag.Core    rules, archives, library, deployer, ledger, baseline, checks (no UI)
 src/Saddlebag.Cli     Spectre.Console commands (Phase 1)
+src/Saddlebag.App.ViewModels  everything the GUI does, without WPF (cross-platform, tested)
+src/Saddlebag.App     WPF views over the view models (Phase 3, Windows only)
 tests/Saddlebag.Tests xUnit: routing rules, deploy/online round trips, crash recovery
 ```
 
@@ -35,7 +37,31 @@ dotnet test
 dotnet publish src/Saddlebag.Cli -c Release -r win-x64 --self-contained -o publish
 ```
 
-That gives one `publish\saddlebag.exe`.
+That gives one `publish\saddlebag.exe` (the CLI). The GUI:
+
+```bash
+dotnet publish src/Saddlebag.App -c Release -r win-x64 --self-contained -o publish-gui
+```
+
+That gives `publish-gui\Saddlebag.exe`. Both use the same Saddlebag folder, so you can mix them.
+
+## GUI
+
+`Saddlebag.exe` opens the folder you set up last (or `Saddlebag.exe --home D:\Saddlebag`); on first run it asks for the game folder and a Saddlebag folder on the same drive. The header has the one Online/Story switch, the profile picker, a count of changes not yet deployed, and banners for a missing baseline, a game update or a running bisect. Pages:
+
+| Page | What it does |
+| --- | --- |
+| Online / Story | Go Online (purge, restore, verify) or back to Story; the verify result in green, amber or red; tick strays to adopt them as a mod, or allow / expect a path |
+| Mods | Drop zone for archives and folders, Link build folder, the library with the winner on top (▲▼ to change priority), and the routing table for the selected mod: source, destination, rule, confidence, why, with Apply / Skip / Reset per file, variant picker, LML packaging and Nexus link |
+| Deploy | The exact plan, every check with its hint, Deploy, Purge, and "ignore dependency checks" |
+| Profiles | Create, switch (only the diff moves), delete |
+| Crash bisect | Choose what stays on, then "It crashed" / "It ran fine" until it names the culprit |
+| Logs | All logs with error counts and the mods they mention; filter, errors only, follow live |
+| Dev watch | Start / stop the build-folder watcher, with its event log |
+| Updates | Nexus key (set, test, forget) and the update check; double-click opens the files page |
+| Settings | Capture the baseline (with progress), allowed extras and expected changes, folders |
+
+All logic lives in `Saddlebag.App.ViewModels`, so the GUI's behaviour is tested on any OS; `Saddlebag.App` only adds XAML. The views have been compiled but not yet opened on Windows, so expect some layout polish on first run.
 
 ## Phase 0: ground truth (on your PC)
 
@@ -197,7 +223,7 @@ The format follows seven published RDR2 packages on GitHub: `<EasyInstall>` with
 
 ## Status against the plan
 
-Phases 1 and 2 are in place, plus Phase 4's crash bisect, install.xml generation, build-folder watcher, log viewer and Nexus update checks. Phase 4 is complete; Phase 3 (the GUI) is next. Phase 0 (real baseline, real archives) is waiting on your PC; nothing here has run on Windows or a real RDR2 install yet.
+Phases 1 and 2 are in place, plus Phase 4's crash bisect, install.xml generation, build-folder watcher, log viewer and Nexus update checks. Phase 4 is complete, and Phase 3's GUI is in place (compiled and its view models tested; not yet run on Windows). Phase 0 (real baseline, real archives) is waiting on your PC; nothing here has run on Windows or a real RDR2 install yet.
 
 Not done yet:
 

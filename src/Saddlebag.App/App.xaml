@@ -1,0 +1,74 @@
+<Application x:Class="Saddlebag.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Saddlebag.App"
+             ShutdownMode="OnMainWindowClose">
+  <Application.Resources>
+    <SolidColorBrush x:Key="Ink" Color="#1F2328"/>
+    <SolidColorBrush x:Key="Muted" Color="#59636E"/>
+    <SolidColorBrush x:Key="Line" Color="#D1D9E0"/>
+    <SolidColorBrush x:Key="Panel" Color="#F6F8FA"/>
+    <SolidColorBrush x:Key="Accent" Color="#8C3A1B"/>
+    <SolidColorBrush x:Key="GoodBrush" Color="#1A7F37"/>
+    <SolidColorBrush x:Key="WarnBrush" Color="#9A6700"/>
+    <SolidColorBrush x:Key="BadBrush" Color="#CF222E"/>
+
+    <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    <local:InverseBoolToVisibilityConverter x:Key="InverseBoolToVis"/>
+    <local:InverseBoolConverter x:Key="InverseBool"/>
+    <local:NullToVisibilityConverter x:Key="NullToVis"/>
+    <local:LevelBrushConverter x:Key="LevelBrush"/>
+    <local:CountToVisibilityConverter x:Key="CountToVis"/>
+
+    <Style TargetType="Button">
+      <Setter Property="Padding" Value="12,5"/>
+      <Setter Property="Margin" Value="0,0,8,0"/>
+      <Setter Property="MinWidth" Value="72"/>
+    </Style>
+    <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="Background" Value="{StaticResource Accent}"/>
+      <Setter Property="Foreground" Value="White"/>
+      <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style x:Key="RowButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="Padding" Value="6,1"/>
+      <Setter Property="MinWidth" Value="0"/>
+      <Setter Property="Margin" Value="0,0,4,0"/>
+    </Style>
+    <Style x:Key="H1" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="18"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Margin" Value="0,0,0,6"/>
+    </Style>
+    <Style x:Key="H2" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Margin" Value="0,12,0,4"/>
+    </Style>
+    <Style x:Key="Hint" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+    <Style x:Key="Banner" TargetType="Border">
+      <Setter Property="Padding" Value="10,6"/>
+      <Setter Property="Margin" Value="0,0,0,6"/>
+      <Setter Property="CornerRadius" Value="4"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+    <Style TargetType="DataGrid">
+      <Setter Property="AutoGenerateColumns" Value="False"/>
+      <Setter Property="IsReadOnly" Value="True"/>
+      <Setter Property="HeadersVisibility" Value="Column"/>
+      <Setter Property="GridLinesVisibility" Value="None"/>
+      <Setter Property="RowHeight" Value="26"/>
+      <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+      <Setter Property="Background" Value="White"/>
+      <Setter Property="CanUserAddRows" Value="False"/>
+      <Setter Property="SelectionMode" Value="Single"/>
+    </Style>
+    <Style TargetType="TabItem">
+      <Setter Property="Padding" Value="14,6"/>
+    </Style>
+  </Application.Resources>
+</Application>
