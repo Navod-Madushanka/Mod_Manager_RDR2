@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Saddlebag.Core.Library;
+using Saddlebag.Core.Routing;
 using Saddlebag.Core.State;
 using Saddlebag.Core.Util;
 
@@ -19,9 +20,7 @@ public sealed record Step(
     string? Method = null,
     string? Note = null);
 
-public sealed record Conflict(string Dest, string Winner, IReadOnlyList<string> Losers);
-
-public sealed record DeployPlan(string Kind, IReadOnlyList<Step> Steps, IReadOnlyList<Conflict> Conflicts, IReadOnlyList<string> Blockers)
+public sealed record DeployPlan(string Kind, IReadOnlyList<Step> Steps, IReadOnlyList<CheckFinding> Checks, IReadOnlyList<string> Blockers)
 {
     public bool IsEmpty => Steps.Count == 0;
     public bool CanApply => Blockers.Count == 0;
@@ -49,19 +48,22 @@ public sealed class Deployer(StateStore store, ModLibrary library, string home, 
 
     // ---------- planning ----------
 
-    private sealed record Desired(string Dest, string ModId, string LibraryPath, string Source, string Sha256, bool Linked);
-
-    /// <summary>Plans the changes that make the game folder match the enabled mods. With <paramref name="purge"/>, the target is no mods at all.</summary>
-    public DeployPlan Plan(bool purge = false)
+    /// <summary>
+    /// Plans the changes that make the game folder match the enabled mods of the active profile.
+    /// With <paramref name="purge"/>, the target is no mods at all. Blocking checks (missing dependencies)
+    /// stop the plan unless <paramref name="ignoreBlockingChecks"/> is set.
+    /// </summary>
+    public DeployPlan Plan(bool purge = false, bool ignoreBlockingChecks = false)
     {
         var blockers = new List<string>();
-        var desired = new Dictionary<string, Desired>(RelPath.Comparer);
-        var contenders = new Dictionary<string, List<Desired>>(RelPath.Comparer);
+        var candidates = new List<Candidate>();
+        var checks = new List<CheckFinding>();
+        var desired = new Dictionary<string, Candidate>(RelPath.Comparer);
 
         if (!purge)
         {
             var mods = store.GetMods().ToDictionary(m => m.Id);
-            foreach (var pm in store.GetProfileMods().Where(p => p.Enabled)) // ascending priority: later wins
+            foreach (var pm in store.GetProfileMods().Where(p => p.Enabled))
             {
                 if (!mods.TryGetValue(pm.ModId, out var mod)) continue;
                 if (mod.IsLinked)
@@ -83,20 +85,20 @@ public sealed class Deployer(StateStore store, ModLibrary library, string home, 
                     continue;
                 }
                 var root = library.FilesRoot(mod);
-                foreach (var f in files.Where(f => f.DestPath is not null))
-                {
-                    var d = new Desired(f.DestPath!, mod.Id, f.LibraryPath, RelPath.ToFull(root, f.LibraryPath), f.Sha256, mod.IsLinked);
-                    if (!contenders.TryGetValue(d.Dest, out var list)) contenders[d.Dest] = list = [];
-                    list.Add(d);
-                    desired[d.Dest] = d;
-                }
+                candidates.AddRange(files.Where(f => f.DestPath is not null).Select(f =>
+                    new Candidate(f.DestPath!, mod.Id, mod.Name, f.LibraryPath, RelPath.ToFull(root, f.LibraryPath), f.Sha256, mod.IsLinked, pm.Priority)));
             }
-        }
 
-        var conflicts = contenders
-            .Where(kv => kv.Value.Select(v => v.Sha256).Distinct().Count() > 1)
-            .Select(kv => new Conflict(kv.Key, kv.Value[^1].ModId, kv.Value.Take(kv.Value.Count - 1).Select(v => v.ModId).Distinct().ToList()))
-            .ToList();
+            var (winners, resolveFindings) = DeployChecks.Resolve(candidates);
+            desired = winners;
+            checks.AddRange(resolveFindings);
+            var deployedNow = store.GetDeployed().Select(d => d.DestPath).ToHashSet(RelPath.Comparer);
+            var untracked = Router.Frameworks.Where(f => !deployedNow.Contains(f) && File.Exists(GamePath(f))).ToHashSet(RelPath.Comparer);
+            var gameUpdated = new Baseline.BaselineService(store, gameDir).GameUpdatedSinceBaseline();
+            checks.AddRange(DeployChecks.Layout(winners, untracked, gameUpdated));
+            if (!ignoreBlockingChecks)
+                blockers.AddRange(checks.Where(c => c.Severity == Severity.Block).Select(c => c.Message + (c.Hint is null ? "" : " " + c.Hint)));
+        }
 
         var deployed = store.GetDeployed().ToDictionary(d => d.DestPath, RelPath.Comparer);
         var backups = store.GetBackups().ToDictionary(b => b.DestPath, RelPath.Comparer);
@@ -134,7 +136,7 @@ public sealed class Deployer(StateStore store, ModLibrary library, string home, 
         }
 
         var steps = removes.Concat(restores).Concat(backupSteps).Concat(places).ToList();
-        return new DeployPlan(purge ? "purge" : "deploy", steps, conflicts, blockers);
+        return new DeployPlan(purge ? "purge" : "deploy", steps, checks, blockers);
     }
 
     private string UniqueBackupPath(string dest, HashSet<string> reserved)

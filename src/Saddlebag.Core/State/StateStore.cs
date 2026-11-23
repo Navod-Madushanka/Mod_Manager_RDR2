@@ -197,19 +197,67 @@ public sealed class StateStore : IDisposable
         Exec("UPDATE mod_files SET sha256=$s, size=$z WHERE mod_id=$m AND library_path=$l",
             ("$s", sha), ("$z", size), ("$m", modId), ("$l", libraryPath));
 
-    // ---------- profile ----------
+    // ---------- profiles ----------
 
-    public List<ProfileModRecord> GetProfileMods(string profile = DefaultProfile) =>
-        Query("SELECT mod_id, enabled, priority FROM profile_mods WHERE profile_id=$p ORDER BY priority",
-            r => new ProfileModRecord(r.GetString(0), r.GetInt64(1) != 0, (int)r.GetInt64(2)), ("$p", profile));
+    /// <summary>The profile deploy, enable and order act on. Switching it and deploying moves only the diff.</summary>
+    public string ActiveProfile => GetSetting("active_profile") ?? DefaultProfile;
 
-    public void SetEnabled(string modId, bool enabled, string profile = DefaultProfile)
+    public List<(string Id, string Name)> GetProfiles() =>
+        Query("SELECT id, name FROM profiles ORDER BY id='default' DESC, name", r => (r.GetString(0), r.GetString(1)));
+
+    public (string Id, string Name)? FindProfile(string idOrName) =>
+        GetProfiles().Where(p => p.Id.Equals(idOrName, StringComparison.OrdinalIgnoreCase) || p.Name.Equals(idOrName, StringComparison.OrdinalIgnoreCase))
+            .Select(p => ((string, string)?)p).FirstOrDefault();
+
+    public void CreateProfile(string id, string name, string? copyFrom = null)
     {
+        if (FindProfile(id) is not null || FindProfile(name) is not null) throw new InvalidOperationException($"A profile called '{name}' already exists.");
+        using var tx = Begin();
+        Exec("INSERT INTO profiles(id,name) VALUES($i,$n)", ("$i", id), ("$n", name));
+        if (copyFrom is not null)
+            Exec("INSERT INTO profile_mods(profile_id,mod_id,enabled,priority) SELECT $i, mod_id, enabled, priority FROM profile_mods WHERE profile_id=$f",
+                ("$i", id), ("$f", copyFrom));
+        tx.Commit();
+    }
+
+    public void DeleteProfile(string id)
+    {
+        if (id == DefaultProfile) throw new InvalidOperationException("The default profile can't be deleted.");
+        if (id == ActiveProfile) throw new InvalidOperationException("Switch to another profile before deleting this one.");
+        Exec("DELETE FROM profiles WHERE id=$i", ("$i", id));
+    }
+
+    public void SetActiveProfile(string id)
+    {
+        if (!GetProfiles().Any(p => p.Id == id)) throw new InvalidOperationException($"No profile '{id}'.");
+        SetSetting("active_profile", id);
+    }
+
+    public List<ProfileModRecord> GetProfileMods(string? profile = null) =>
+        Query("SELECT mod_id, enabled, priority FROM profile_mods WHERE profile_id=$p ORDER BY priority",
+            r => new ProfileModRecord(r.GetString(0), r.GetInt64(1) != 0, (int)r.GetInt64(2)), ("$p", profile ?? ActiveProfile));
+
+    public void SetEnabled(string modId, bool enabled, string? profile = null)
+    {
+        profile ??= ActiveProfile;
         var next = Query("SELECT COALESCE(MAX(priority),0)+1 FROM profile_mods WHERE profile_id=$p", r => r.GetInt64(0), ("$p", profile))[0];
         Exec("""
             INSERT INTO profile_mods(profile_id,mod_id,enabled,priority) VALUES($p,$m,$e,$n)
             ON CONFLICT(profile_id,mod_id) DO UPDATE SET enabled=excluded.enabled
             """, ("$p", profile), ("$m", modId), ("$e", enabled ? 1 : 0), ("$n", next));
+    }
+
+    /// <summary>Moves a mod to a 1-based position in the profile's order (higher wins) and renumbers the rest.</summary>
+    public void MoveMod(string modId, int position, string? profile = null)
+    {
+        profile ??= ActiveProfile;
+        var order = GetProfileMods(profile).Select(p => p.ModId).ToList();
+        if (!order.Remove(modId)) throw new InvalidOperationException("That mod isn't in this profile yet. Enable it first.");
+        order.Insert(Math.Clamp(position - 1, 0, order.Count), modId);
+        using var tx = Begin();
+        for (var i = 0; i < order.Count; i++)
+            Exec("UPDATE profile_mods SET priority=$n WHERE profile_id=$p AND mod_id=$m", ("$n", i + 1), ("$p", profile), ("$m", order[i]));
+        tx.Commit();
     }
 
     // ---------- ledger ----------

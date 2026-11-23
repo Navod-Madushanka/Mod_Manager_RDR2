@@ -88,6 +88,48 @@ public sealed class ModLibrary(StateStore store, string home, Router router)
         return new ImportResult(mod, Reroute(id), existing is not null);
     }
 
+    /// <summary>
+    /// Turns files already sitting in the game folder into a tracked mod: they move into the library (same volume, so
+    /// it's a rename) and are routed 1:1 back to where they were. Nothing is deleted; on failure every file moves back.
+    /// </summary>
+    public ImportResult Adopt(string gameDir, IReadOnlyList<string> relFiles, string name)
+    {
+        if (relFiles.Count == 0) throw new InvalidOperationException("Nothing to adopt.");
+        var fingerprint = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n', relFiles.Order(StringComparer.OrdinalIgnoreCase)))));
+        var id = $"adopted-{Slug(name)}-{fingerprint[..8]}";
+        if (store.GetMod(id) is not null) throw new InvalidOperationException($"These files were already adopted as {id}.");
+        var dir = ModDir(id);
+        var staging = Path.Combine(dir, "files.partial");
+        Directory.CreateDirectory(staging);
+
+        var moved = new List<(string From, string To)>();
+        try
+        {
+            foreach (var rel in relFiles)
+            {
+                var from = RelPath.ToFull(gameDir, rel);
+                var to = RelPath.ToFull(staging, rel);
+                FileOps.EnsureParent(to);
+                File.Move(from, to);
+                moved.Add((from, to));
+            }
+        }
+        catch
+        {
+            foreach (var (from, to) in moved) { FileOps.EnsureParent(from); File.Move(to, from); }
+            Directory.Delete(dir, true);
+            throw;
+        }
+        Directory.Move(staging, Path.Combine(dir, "files"));
+
+        var mod = new ModRecord(id, name, null, "adopted from the game folder", null, DateTime.UtcNow, null);
+        store.UpsertMod(mod);
+        var manifest = new ModManifest { Id = id, Name = name };
+        foreach (var rel in relFiles) manifest.Overrides.Files[rel] = rel;
+        SaveManifest(manifest);
+        return new ImportResult(mod, Reroute(id), AlreadyImported: false);
+    }
+
     public void Remove(string id)
     {
         if (store.GetDeployed().Any(d => d.ModId == id))

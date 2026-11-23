@@ -86,9 +86,16 @@ public static class Show
 
     public static void Plan(DeployPlan plan)
     {
-        foreach (var b in plan.Blockers) AnsiConsole.MarkupLine($"[red]Blocked:[/] {Markup.Escape(b)}");
-        foreach (var c in plan.Conflicts)
-            AnsiConsole.MarkupLine($"[yellow]Conflict:[/] {Markup.Escape(c.Dest)}: {Markup.Escape(c.Winner)} wins over {Markup.Escape(string.Join(", ", c.Losers))}");
+        foreach (var c in plan.Checks.OrderByDescending(c => c.Severity))
+        {
+            var tag = c.Severity switch { Severity.Block => "[red]Blocked[/]", Severity.Warn => "[yellow]Warning[/]", _ => "[blue]Info[/]" };
+            AnsiConsole.MarkupLine($"{tag} [grey]({c.Id})[/] {Markup.Escape(c.Message)}");
+            if (c.Hint is not null) AnsiConsole.MarkupLine($"  [grey]{Markup.Escape(c.Hint)}[/]");
+        }
+        foreach (var b in plan.Blockers.Where(b => !plan.Checks.Any(c => b.StartsWith(c.Message))))
+            AnsiConsole.MarkupLine($"[red]Blocked:[/] {Markup.Escape(b)}");
+        if (!plan.CanApply)
+            AnsiConsole.MarkupLine("[grey]Fix the blocked items, or pass --ignore-deps if a mod really doesn't need what's missing.[/]");
         if (plan.IsEmpty) { AnsiConsole.MarkupLine("[green]Nothing to do: the game folder already matches.[/]"); return; }
         var t = new Table().Border(TableBorder.Simple).AddColumns("Step", "Game path", "Mod", "Detail");
         foreach (var s in plan.Steps)
@@ -130,7 +137,7 @@ public static class Show
         AnsiConsole.Write(new Panel($"[bold {color}]{label}[/]\n[grey]{r.FilesChecked} files checked, {r.FilesHashed} hashed{(r.Deep ? " (deep)" : "")}. " +
                                     "This proves file state only; it says nothing about bans.[/]").BorderColor(color == "green" ? Spectre.Console.Color.Green : color == "yellow" ? Spectre.Console.Color.Yellow : Spectre.Console.Color.Red));
         if (r.Status == VerifyStatus.Red && r.Findings.Any(f => f.Kind is FindingKind.Extra or FindingKind.ModSignature))
-            AnsiConsole.MarkupLine("[grey]Untracked extras aren't removed automatically. Move them out, or `saddlebag allow <path>` if you mean to keep one.[/]");
+            AnsiConsole.MarkupLine("[grey]Untracked extras aren't removed automatically. Turn them into a tracked mod with `saddlebag adopt <path>... --name <name>`, move them out, or `saddlebag allow <path>` to keep one.[/]");
         if (r.Findings.Any(f => f.Kind is FindingKind.Missing or FindingKind.Changed))
             AnsiConsole.MarkupLine("[grey]Missing or changed vanilla files: run your launcher's verify. After a game update, re-capture the baseline.[/]");
         return r.Status switch { VerifyStatus.Green => ExitCodes.Ok, VerifyStatus.Amber => ExitCodes.Amber, _ => ExitCodes.Red };

@@ -34,6 +34,16 @@ app.Configure(c =>
     c.AddCommand<VerifyCommand>("verify").WithDescription("Compare the game folder with the baseline.");
     c.AddCommand<OnlineCommand>("online").WithDescription("Purge, restore, then verify the folder matches your clean baseline.");
     c.AddCommand<StoryCommand>("story").WithDescription("Put your enabled mods back (only changed files move).");
+    c.AddBranch("profile", b =>
+    {
+        b.SetDescription("Named sets of enabled mods with their own order, e.g. Story-Full and Story-Dev.");
+        b.AddCommand<ProfileListCommand>("list").WithDescription("Profiles, with the active one marked.");
+        b.AddCommand<ProfileCreateCommand>("create").WithDescription("New profile, copied from the active one unless --from or --empty.");
+        b.AddCommand<ProfileUseCommand>("use").WithDescription("Switch profile; in Story mode only the differing files move.");
+        b.AddCommand<ProfileDeleteCommand>("delete").WithDescription("Delete a profile (not the active or default one).");
+    });
+    c.AddCommand<OrderCommand>("order").WithDescription("Move a mod to a priority position in the active profile; higher wins.");
+    c.AddCommand<AdoptCommand>("adopt").WithDescription("Turn untracked mod files in the game folder into a tracked mod.");
     c.AddCommand<AllowCommand>("allow").WithDescription("Allow an extra file in Online mode (shows amber), e.g. x64/data/startup.meta.");
     c.AddCommand<ExpectCommand>("expect").WithDescription("Mark a vanilla file the launcher rewrites (e.g. a DLSS DLL) as expected to change.");
 

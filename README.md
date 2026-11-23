@@ -60,6 +60,10 @@ That gives one `publish\saddlebag.exe`.
 | `story` | Put enabled mods back (diff only) |
 | `verify [--deep]` | Compare with the baseline; `--deep` hashes every file |
 | `allow <path>` / `expect <path>` | Allowed extra (amber), e.g. `x64/data/startup.meta`; file the launcher rewrites, e.g. a DLSS DLL |
+| `profile list/create/use/delete` | Named sets of mods (e.g. Story-Full, Story-Dev); `use` moves only the files that differ |
+| `order <mod> <#>` | Priority in the active profile; the highest number wins a conflict |
+| `adopt <paths>... --name <name>` | Turn mod files you put in by hand into a tracked mod |
+| `deploy --ignore-deps` | Deploy past a failed dependency check (e.g. an .asi that truly needs no Script Hook) |
 | `status`, `list`, `enable`, `disable`, `remove` | Housekeeping |
 
 ## How safety works
@@ -89,16 +93,35 @@ Rule ids match the build plan's table and are shown in every preview. Overrides 
 
 Wrapper folders are stripped first. Archive entries that point outside the mod folder (zip-slip) are rejected.
 
+## Checks
+
+These run on every `plan`, `install`, `deploy` and profile switch. Check ids are stable.
+
+| Id | Catches | Action |
+| --- | --- | --- |
+| `same-dest` | Two mods write the same file with different content | Warn; highest priority wins, the loser stays in the library |
+| `stream-name` | Same stream asset name in two folders (LML streams by name) | Warn |
+| `shared-slot` | A mod bundles its own `dinput8.dll`, `ScriptHookRDR2.dll` or .NET hook files | Newest file version wins, whatever the priority |
+| `two-asi-loaders` | `dinput8.dll` plus the old `version.dll` loader, from mods or put in by hand | Warn |
+| `missing-dep-lml` | Anything under `lml/` but no `vfs.asi` | Block |
+| `missing-dep-asi-loader` | `.asi` or LML but no ASI loader | Block |
+| `missing-dep-scripthook` | `.asi`, LML or .NET scripts but no `ScriptHookRDR2.dll` | Block |
+| `missing-dep-dotnet-hook` | .NET script but no `ScriptHookRDRDotNet.asi` | Block |
+| `dotnet-version-mismatch` | .NET hook `.asi` and API DLL from different releases | Warn |
+| `game-updated` | `RDR2.exe` changed since the baseline | Warn |
+
+A loader you installed by hand (in the folder, not in the ledger) satisfies a dependency, but Online mode will flag it until you `adopt` it.
+
 ## Status against the plan
 
-Phase 1 is in place except the items below.
+Phases 1 and 2 are in place. Phase 0 (real baseline, real archives) is waiting on your PC; nothing here has run on Windows or a real RDR2 install yet.
 
 Not done yet:
 
 - Rules live in `Router.cs`, not `rules.json`.
 - Rule 7's "files with a known game path" isn't implemented (needs a game-path index).
+- Replace targets declared inside `install.xml` aren't checked for collisions; that waits on the open question about RDR2's install.xml format. Folder-based `lml/replace/` collisions are caught by `same-dest`.
 - `Documents\Rockstar Games\Red Dead Redemption 2\system.xml` isn't in the baseline yet.
-- Only one profile ("default"); priority is enable order. Profiles and the full conflict and dependency checks are Phase 2.
-- Only tested on Linux so far. The Windows paths (`CreateHardLinkW`, case-insensitive NTFS, launcher process names) need a run on the real install in Phase 0.
+- The Windows paths (`CreateHardLinkW`, case-insensitive NTFS, launcher process names, PE file versions of real hook DLLs) need a run on the real install.
 
 Open questions from the plan still to settle: LML Mod Manager's load-order storage, install.xml paths for RDR2, the V2 .NET API assembly name (rule 5 matches any `ScriptHookRDR*` reference, so either name works), and which store your install is from.

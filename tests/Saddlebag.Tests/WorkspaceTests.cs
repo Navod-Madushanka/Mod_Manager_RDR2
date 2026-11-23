@@ -22,6 +22,7 @@ public class WorkspaceTests : IDisposable
     /// <summary>Five fixture mods covering the main package types; one overwrites a vanilla file.</summary>
     private void InstallFive(Workspace ws)
     {
+        _sb.EnableFrameworks(ws);
         var mods = new List<string>
         {
             _sb.Zip("lml", ("vfs.asi", "vfs"), ("lml/mods.xml", "<mods/>")),
@@ -48,7 +49,7 @@ public class WorkspaceTests : IDisposable
         InstallFive(ws);
 
         var deploy = ws.GoStory();
-        Assert.Equal(9, deploy.Placed);
+        Assert.Equal(13, deploy.Placed);
         Assert.Equal(1, deploy.BackedUp);
         Assert.Equal("MODDED meta", File.ReadAllText(_sb.GameFile("x64/data/vanilla.meta")));
         Assert.True(File.Exists(_sb.GameFile("lml/Saddles/stream/saddle.ytd")));
@@ -66,7 +67,7 @@ public class WorkspaceTests : IDisposable
         AssertGreen(ws.Baseline.Verify(deep: true));
 
         var story = ws.GoStory();
-        Assert.Equal(9, story.Placed);
+        Assert.Equal(13, story.Placed);
         Assert.True(ws.Deployer.Plan().IsEmpty, "a second deploy has nothing to do");
     }
 
@@ -81,6 +82,7 @@ public class WorkspaceTests : IDisposable
             using (var ws = Workspace.Init(sb.Home, sb.Game, sb.Guard))
             {
                 ws.CaptureBaseline(false);
+                sb.EnableFrameworks(ws, lml: true);
                 var fixtures = new[]
                 {
                     sb.Zip("trainer", ("Trainer.asi", "asi"), ("Trainer.ini", "ini")),
@@ -141,6 +143,7 @@ public class WorkspaceTests : IDisposable
     public void Edited_hardlinked_file_is_kept_in_library_on_purge()
     {
         using var ws = Ready();
+        _sb.EnableFrameworks(ws);
         var mod = ws.Library.Import(_sb.Zip("trainer", ("Trainer.asi", "asi"), ("Trainer.ini", "speed=1"))).Mod;
         ws.Store.SetEnabled(mod.Id, true);
         ws.Deploy();
@@ -160,6 +163,7 @@ public class WorkspaceTests : IDisposable
     public void Linked_dev_folder_deploys_copies_and_redeploys_only_the_diff()
     {
         using var ws = Ready();
+        _sb.EnableFrameworks(ws);
         var build = _sb.Folder("bin/Release");
         Sandbox.WriteBytes(build, "HorsePersonalities.dll", Dlls.Script);
         Sandbox.Write(build, "HorsePersonalities.ini", "a=1");
@@ -167,7 +171,7 @@ public class WorkspaceTests : IDisposable
         ws.Store.SetEnabled(mod.Id, true);
 
         ws.Deploy();
-        Assert.All(ws.Store.GetDeployed(), d => Assert.Equal("copy", d.Method));
+        Assert.All(ws.Store.GetDeployed().Where(d => d.ModId == mod.Id), d => Assert.Equal("copy", d.Method));
         Assert.True(File.Exists(_sb.GameFile("scripts/HorsePersonalities.dll")));
 
         Sandbox.Write(build, "HorsePersonalities.ini", "a=2"); // a fresh build
@@ -235,14 +239,15 @@ public class WorkspaceTests : IDisposable
     public void Conflicting_mods_report_winner_by_priority()
     {
         using var ws = Ready();
+        _sb.EnableFrameworks(ws, lml: true);
         var a = ws.Library.Import(_sb.Zip("horse-a", ("horse.ytd", "A"))).Mod;
         var b = ws.Library.Import(_sb.Zip("horse-b", ("sub/horse.ytd", "B"))).Mod;
         ws.Store.SetEnabled(a.Id, true);
         ws.Store.SetEnabled(b.Id, true);
 
         var plan = ws.Deployer.Plan();
-        var c = Assert.Single(plan.Conflicts);
-        Assert.Equal(("lml/stream/horse.ytd", b.Id), (c.Dest, c.Winner));
+        var c = Assert.Single(plan.Checks, f => f.Id == DeployChecks.SameDest);
+        Assert.StartsWith("lml/stream/horse.ytd: horse-b wins over horse-a", c.Message);
         ws.Deployer.Apply(plan);
         Assert.Equal("B", File.ReadAllText(_sb.GameFile("lml/stream/horse.ytd")));
     }
@@ -251,6 +256,7 @@ public class WorkspaceTests : IDisposable
     public void Unresolved_files_block_deploy_until_routed()
     {
         using var ws = Ready();
+        _sb.EnableFrameworks(ws, lml: true);
         var mod = ws.Library.Import(_sb.Zip("weather", ("weather.ymt", "x"))).Mod;
         ws.Store.SetEnabled(mod.Id, true);
         Assert.Throws<DeployException>(() => ws.Deploy());

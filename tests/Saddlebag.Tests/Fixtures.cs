@@ -70,6 +70,16 @@ public sealed class Sandbox : IDisposable
         return zip;
     }
 
+    /// <summary>Imports and enables Script Hook RDR2, its .NET hook and (optionally) LML, so dependency checks pass.</summary>
+    public void EnableFrameworks(Workspace ws, bool lml = false)
+    {
+        var hooks = Zip("scripthook-" + Guid.NewGuid().ToString("N")[..6],
+            ("ScriptHookRDR2.dll", "hook"), ("dinput8.dll", "loader"), ("ScriptHookRDRDotNet.asi", "dotnet"), ("ScriptHookRDRNetAPI.dll", "api"));
+        ws.Store.SetEnabled(ws.Library.Import(hooks).Mod.Id, true);
+        if (lml)
+            ws.Store.SetEnabled(ws.Library.Import(Zip("lml-" + Guid.NewGuid().ToString("N")[..6], ("vfs.asi", "vfs"), ("lml/mods.xml", "<mods/>"))).Mod.Id, true);
+    }
+
     public string GameFile(string rel) => Path.Combine(Game, rel.Replace('/', Path.DirectorySeparatorChar));
 
     public void Dispose()

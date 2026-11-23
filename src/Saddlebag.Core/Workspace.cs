@@ -97,10 +97,10 @@ public sealed class Workspace : IDisposable
         return Deployer.Recover();
     }
 
-    public ApplyResult Deploy()
+    public ApplyResult Deploy(bool ignoreBlockingChecks = false)
     {
         Prepare();
-        return Deployer.Apply(Deployer.Plan());
+        return Deployer.Apply(Deployer.Plan(ignoreBlockingChecks: ignoreBlockingChecks));
     }
 
     public ApplyResult Purge()
@@ -122,11 +122,66 @@ public sealed class Workspace : IDisposable
     }
 
     /// <summary>Story mode: put the enabled mods back. Only files that differ from the ledger move.</summary>
-    public ApplyResult GoStory()
+    public ApplyResult GoStory(bool ignoreBlockingChecks = false)
     {
-        var r = Deploy();
+        var r = Deploy(ignoreBlockingChecks);
         Store.SetSetting("mode", "story");
         return r;
+    }
+
+    /// <summary>
+    /// Makes another profile active. In Story mode it deploys straight away, and because deploy is a diff against
+    /// the ledger, only files that differ between the two profiles move. In Online mode it only switches.
+    /// </summary>
+    public ApplyResult? SwitchProfile(string idOrName, bool deploy = true)
+    {
+        var p = Store.FindProfile(idOrName) ?? throw new InvalidOperationException($"No profile '{idOrName}'. See `saddlebag profile list`.");
+        Prepare();
+        Store.SetActiveProfile(p.Id);
+        if (!deploy || Store.GetSetting("mode") == "online") return null;
+        return Deployer.Apply(Deployer.Plan());
+    }
+
+    public sealed record AdoptResult(Library.ImportResult Import, IReadOnlyList<string> ReplacedVanilla);
+
+    /// <summary>
+    /// Adopts untracked files (game-relative files or folders) as a mod in the active profile. The files leave the
+    /// game folder; `story` puts them back as tracked links. Unchanged vanilla files and deployed files are refused.
+    /// </summary>
+    public AdoptResult Adopt(IEnumerable<string> paths, string name)
+    {
+        Prepare();
+        var deployed = Store.GetDeployed().Select(d => d.DestPath).ToHashSet(RelPath.Comparer);
+        var baseline = Store.GetBaseline().ToDictionary(b => b.Path, RelPath.Comparer);
+        var files = new List<string>();
+        foreach (var raw in paths)
+        {
+            var rel = RelPath.Normalize(raw);
+            if (!RelPath.IsSafe(rel)) throw new InvalidOperationException($"'{raw}' isn't a path inside the game folder.");
+            var full = RelPath.ToFull(GameDir, rel);
+            if (Directory.Exists(full))
+                files.AddRange(Directory.EnumerateFiles(full, "*", SearchOption.AllDirectories).Select(f => RelPath.From(GameDir, f)));
+            else if (File.Exists(full)) files.Add(rel);
+            else throw new FileNotFoundException($"'{rel}' isn't in the game folder.");
+        }
+        files = files.Distinct(RelPath.Comparer).ToList();
+
+        var replaced = new List<string>();
+        foreach (var f in files)
+        {
+            if (deployed.Contains(f)) throw new InvalidOperationException($"{f} is already tracked as part of a mod.");
+            if (RelPath.Comparer.Equals(f, "RDR2.exe")) throw new InvalidOperationException("RDR2.exe can't be adopted.");
+            if (baseline.TryGetValue(f, out var b))
+            {
+                var fi = new FileInfo(RelPath.ToFull(GameDir, f));
+                var same = fi.Length == b.Size && (fi.LastWriteTimeUtc.Ticks == b.MTime || FileOps.Sha256(fi.FullName) == b.Sha256);
+                if (same) throw new InvalidOperationException($"{f} is an unchanged vanilla file; there's nothing to adopt.");
+                replaced.Add(f);
+            }
+        }
+        var import = Library.Adopt(GameDir, files, name);
+        Store.SetEnabled(import.Mod.Id, true);
+        return new AdoptResult(import, replaced);
     }
 
     public void CaptureBaseline(bool force, IProgress<(int, int, string)>? progress = null)

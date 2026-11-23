@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Saddlebag.Core;
 using Saddlebag.Core.Baseline;
+using Saddlebag.Core.Deploy;
 using Saddlebag.Core.Routing;
 using Saddlebag.Core.State;
 using Spectre.Console;
@@ -48,6 +49,7 @@ public sealed class StatusCommand : Command<HomeSettings>
         grid.AddRow("Baseline", at is null ? "[red]none: run `saddlebag baseline capture`[/]" : $"{ws.Store.BaselineCount()} files, {at:yyyy-MM-dd HH:mm} UTC, game {Markup.Escape(version ?? "?")}");
         grid.AddRow("Mods", $"{mods.Count} in library, {enabled} enabled");
         grid.AddRow("Deployed", $"{ws.Store.GetDeployed().Count} files, {ws.Store.GetBackups().Count} originals backed up");
+        grid.AddRow("Profile", Markup.Escape(ws.Store.FindProfile(ws.Store.ActiveProfile)?.Name ?? ws.Store.ActiveProfile));
         AnsiConsole.Write(grid);
         if (at is not null && ws.Baseline.GameUpdatedSinceBaseline())
             AnsiConsole.MarkupLine("[yellow]RDR2.exe changed since the baseline: the game updated.[/] Hook-based mods may crash. Purge, verify files in your launcher, then re-capture the baseline.");
@@ -154,6 +156,11 @@ public sealed class InstallCommand : Command<InstallCommand.Settings>
         ws.Prepare();
         var dp = ws.Deployer.Plan();
         Show.Plan(dp);
+        if (!dp.CanApply)
+        {
+            AnsiConsole.MarkupLine("[yellow]Installed and enabled, but not deployed yet.[/] Fix the above, then run [bold]saddlebag deploy[/].");
+            return ExitCodes.Red;
+        }
         Show.Applied(ws.Deployer.Apply(dp));
         ws.Store.SetSetting("mode", "story");
         return ExitCodes.Ok;
@@ -195,8 +202,9 @@ public sealed class ListCommand : Command<HomeSettings>
                 p?.Enabled == true ? "[green]yes[/]" : "[grey]no[/]", deployed.GetValueOrDefault(m.Id).ToString(),
                 Markup.Escape(m.LinkedPath is not null ? "linked: " + m.LinkedPath : m.SourceUrl ?? ""));
         }
+        AnsiConsole.MarkupLine($"Profile: [bold]{Markup.Escape(ws.Store.FindProfile(ws.Store.ActiveProfile)?.Name ?? ws.Store.ActiveProfile)}[/]");
         AnsiConsole.Write(t);
-        AnsiConsole.MarkupLine("[grey]Higher # wins when two mods write the same file.[/]");
+        AnsiConsole.MarkupLine("[grey]Higher # wins when two mods write the same file. Change it with `saddlebag order <mod> <#>`.[/]");
         return ExitCodes.Ok;
     }
 }
@@ -277,7 +285,7 @@ public sealed class RemoveCommand : Command<ModArgSettings>
 
 public sealed class PlanCommand : Command<PlanCommand.Settings>
 {
-    public sealed class Settings : HomeSettings
+    public sealed class Settings : DeploySettings
     {
         [CommandOption("--purge")] [Description("Plan a purge instead of a deploy.")] public bool Purge { get; set; }
     }
@@ -285,19 +293,27 @@ public sealed class PlanCommand : Command<PlanCommand.Settings>
     public override int Execute(CommandContext context, Settings s, CancellationToken ct)
     {
         using var ws = Ctx.Open(s);
-        var plan = ws.Deployer.Plan(s.Purge);
+        var plan = ws.Deployer.Plan(s.Purge, s.IgnoreDeps);
         Show.Plan(plan);
         return plan.CanApply ? ExitCodes.Ok : ExitCodes.Red;
     }
 }
 
-public sealed class DeployCommand : Command<HomeSettings>
+public class DeploySettings : HomeSettings
 {
-    public override int Execute(CommandContext context, HomeSettings s, CancellationToken ct)
+    [CommandOption("--ignore-deps")]
+    [Description("Deploy even though a dependency check failed (e.g. an .asi that truly doesn't need Script Hook).")]
+    public bool IgnoreDeps { get; set; }
+}
+
+public sealed class DeployCommand : Command<DeploySettings>
+{
+    public override int Execute(CommandContext context, DeploySettings s, CancellationToken ct)
     {
         using var ws = Ctx.Open(s);
         ws.Prepare();
-        var plan = ws.Deployer.Plan();
+        var plan = ws.Deployer.Plan(ignoreBlockingChecks: s.IgnoreDeps);
+        if (!plan.CanApply) { Show.Plan(plan); return ExitCodes.Red; }
         Show.Plan(plan);
         Show.Applied(ws.Deployer.Apply(plan));
         ws.Store.SetSetting("mode", "story");
@@ -348,15 +364,16 @@ public sealed class OnlineCommand : Command<VerifySettings>
     }
 }
 
-public sealed class StoryCommand : Command<HomeSettings>
+public sealed class StoryCommand : Command<DeploySettings>
 {
-    public override int Execute(CommandContext context, HomeSettings s, CancellationToken ct)
+    public override int Execute(CommandContext context, DeploySettings s, CancellationToken ct)
     {
         using var ws = Ctx.Open(s);
         ws.Prepare();
-        var plan = ws.Deployer.Plan();
+        var plan = ws.Deployer.Plan(ignoreBlockingChecks: s.IgnoreDeps);
         Show.Plan(plan);
-        Show.Applied(ws.GoStory());
+        if (!plan.CanApply) return ExitCodes.Red;
+        Show.Applied(ws.GoStory(s.IgnoreDeps));
         return ExitCodes.Ok;
     }
 }
@@ -387,6 +404,124 @@ public sealed class ExpectCommand : Command<PathRuleSettings>
         var p = Saddlebag.Core.Util.RelPath.Normalize(s.Path);
         ws.Store.SetPathRule(p, s.Remove ? null : StateStore.RuleExpectChange);
         AnsiConsole.MarkupLine(s.Remove ? $"No longer expected to change: {Markup.Escape(p)}" : $"Expected to change: {Markup.Escape(p)} (e.g. the launcher rewrites it).");
+        return ExitCodes.Ok;
+    }
+}
+
+// ---------- Phase 2: profiles, order, adopt ----------
+
+public sealed class ProfileListCommand : Command<HomeSettings>
+{
+    public override int Execute(CommandContext context, HomeSettings s, CancellationToken ct)
+    {
+        using var ws = Ctx.Open(s);
+        var t = new Table().Border(TableBorder.Rounded).AddColumns("", "Id", "Name", "Enabled mods");
+        foreach (var (id, name) in ws.Store.GetProfiles())
+            t.AddRow(id == ws.Store.ActiveProfile ? "[green]●[/]" : "", Markup.Escape(id), Markup.Escape(name),
+                ws.Store.GetProfileMods(id).Count(p => p.Enabled).ToString());
+        AnsiConsole.Write(t);
+        return ExitCodes.Ok;
+    }
+}
+
+public sealed class ProfileCreateCommand : Command<ProfileCreateCommand.Settings>
+{
+    public sealed class Settings : HomeSettings
+    {
+        [CommandArgument(0, "<NAME>")] public string Name { get; set; } = "";
+        [CommandOption("--from <PROFILE>")] [Description("Start as a copy of this profile (default: the active one). Use --empty for none.")]
+        public string? From { get; set; }
+        [CommandOption("--empty")] public bool Empty { get; set; }
+    }
+
+    public override int Execute(CommandContext context, Settings s, CancellationToken ct)
+    {
+        using var ws = Ctx.Open(s);
+        string? from = null;
+        if (!s.Empty)
+            from = s.From is null ? ws.Store.ActiveProfile
+                : ws.Store.FindProfile(s.From)?.Id ?? throw new InvalidOperationException($"No profile '{s.From}'.");
+        var id = Saddlebag.Core.Library.ModLibrary.Slug(s.Name);
+        ws.Store.CreateProfile(id, s.Name, from);
+        AnsiConsole.MarkupLine($"[green]Created[/] {Markup.Escape(s.Name)} ({Markup.Escape(id)}){(from is null ? ", empty" : $", copied from {Markup.Escape(from)}")}. Switch with [bold]saddlebag profile use {Markup.Escape(id)}[/].");
+        return ExitCodes.Ok;
+    }
+}
+
+public sealed class ProfileUseCommand : Command<ProfileUseCommand.Settings>
+{
+    public sealed class Settings : HomeSettings
+    {
+        [CommandArgument(0, "<PROFILE>")] public string Profile { get; set; } = "";
+        [CommandOption("--no-deploy")] [Description("Switch without touching the game folder.")] public bool NoDeploy { get; set; }
+    }
+
+    public override int Execute(CommandContext context, Settings s, CancellationToken ct)
+    {
+        using var ws = Ctx.Open(s);
+        var r = ws.SwitchProfile(s.Profile, deploy: !s.NoDeploy);
+        AnsiConsole.MarkupLine($"Active profile: [bold]{Markup.Escape(ws.Store.FindProfile(ws.Store.ActiveProfile)!.Value.Name)}[/]");
+        if (r is null)
+            AnsiConsole.MarkupLine(ws.Store.GetSetting("mode") == "online"
+                ? "[grey]You're in Online mode, so nothing was deployed. `saddlebag story` puts this profile's mods in.[/]"
+                : "[grey]Not deployed. Run `saddlebag deploy` when ready.[/]");
+        else Show.Applied(r);
+        return ExitCodes.Ok;
+    }
+}
+
+public sealed class ProfileDeleteCommand : Command<ProfileUseCommand.Settings>
+{
+    public override int Execute(CommandContext context, ProfileUseCommand.Settings s, CancellationToken ct)
+    {
+        using var ws = Ctx.Open(s);
+        var p = ws.Store.FindProfile(s.Profile) ?? throw new InvalidOperationException($"No profile '{s.Profile}'.");
+        ws.Store.DeleteProfile(p.Id);
+        AnsiConsole.MarkupLine($"Deleted profile {Markup.Escape(p.Name)}. Its mods stay in the library.");
+        return ExitCodes.Ok;
+    }
+}
+
+public sealed class OrderCommand : Command<OrderCommand.Settings>
+{
+    public sealed class Settings : ModArgSettings
+    {
+        [CommandArgument(1, "<POSITION>")] [Description("1 is lowest priority; the highest number wins conflicts.")]
+        public int Position { get; set; }
+    }
+
+    public override int Execute(CommandContext context, Settings s, CancellationToken ct)
+    {
+        using var ws = Ctx.Open(s);
+        var m = ws.Library.Require(s.Mod);
+        ws.Store.MoveMod(m.Id, s.Position);
+        AnsiConsole.MarkupLine($"Moved {Markup.Escape(m.Id)} to #{s.Position}. Run [bold]saddlebag plan[/] to see what changes.");
+        return ExitCodes.Ok;
+    }
+}
+
+public sealed class AdoptCommand : Command<AdoptCommand.Settings>
+{
+    public sealed class Settings : HomeSettings
+    {
+        [CommandArgument(0, "<PATHS>")] [Description("Game-relative files or folders, e.g. dinput8.dll ScriptHookRDR2.dll lml")]
+        public string[] Paths { get; set; } = [];
+        [CommandOption("--name <NAME>")] public string? Name { get; set; }
+    }
+
+    public override int Execute(CommandContext context, Settings s, CancellationToken ct)
+    {
+        using var ws = Ctx.Open(s);
+        var name = s.Name ?? throw new InvalidOperationException("Pass --name, e.g. --name \"Script Hook (manual install)\".");
+        var r = ws.Adopt(s.Paths, name);
+        AnsiConsole.MarkupLine($"[green]Adopted[/] {r.Import.Plan.Files.Count} file(s) as [bold]{Markup.Escape(r.Import.Mod.Id)}[/] and enabled it. They're in the library now, out of the game folder.");
+        if (r.ReplacedVanilla.Count > 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]These replaced vanilla files, so the originals are now missing:[/]");
+            foreach (var f in r.ReplacedVanilla) AnsiConsole.MarkupLine($"  • {Markup.Escape(f)}");
+            AnsiConsole.MarkupLine("Run your launcher's [bold]verify files[/] to get the originals back, then [bold]saddlebag story[/] (it backs them up before linking the mod in).");
+        }
+        else AnsiConsole.MarkupLine("Run [bold]saddlebag story[/] to put them back as tracked files.");
         return ExitCodes.Ok;
     }
 }
