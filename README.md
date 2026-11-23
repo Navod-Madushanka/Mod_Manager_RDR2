@@ -64,6 +64,7 @@ That gives one `publish\saddlebag.exe`.
 | `order <mod> <#>` | Priority in the active profile; the highest number wins a conflict |
 | `adopt <paths>... --name <name>` | Turn mod files you put in by hand into a tracked mod |
 | `bisect start` / `bad` / `good` / `undo` / `status` / `reset` | Find the mod that crashes the game, half the suspects per launch (see below) |
+| `watch [mods] [--quiet 1500]` | Redeploy linked build folders after every build (see below) |
 | `lml-pack <mod> [--map SRC=update:/...]` | Package a loose mod as an LML mod with a generated install.xml (see below); `--off` undoes it |
 | `deploy --ignore-deps` | Deploy past a failed dependency check (e.g. an .asi that truly needs no Script Hook) |
 | `status`, `list`, `enable`, `disable`, `remove` | Housekeeping |
@@ -128,6 +129,24 @@ When the game crashes and you don't know which mod is to blame:
 
 It runs in a temporary profile, so your own profile is never edited, and its state is saved between launches. `bisect undo` takes back a wrong answer. If no single mod crashes on its own, it reports the smallest set that crashed instead of blaming an innocent mod: the crash needs two or more of those together.
 
+## Build-folder watcher
+
+For mod development, such as Horse Personalities:
+
+```text
+saddlebag link "C:\src\HorsePersonalities\bin\Release" --name "Horse Personalities"
+saddlebag watch
+```
+
+Then build in Visual Studio as usual. The watcher:
+
+- waits until the folder has been quiet for 1.5 s (`--quiet <ms>`), so a build's burst of writes becomes one deploy;
+- deploys as a normal journaled diff, so only the files the build changed move;
+- holds off while RDR2 or the launcher is open, and deploys as soon as it closes;
+- retries when the build still holds a file, or a file changes mid-deploy (that file is skipped and placed on the next pass, never half-recorded);
+- reports a build that can't deploy (e.g. a new file that needs a routing answer) once, then waits for the next build;
+- refuses to run in Online mode or during a crash bisect, and stops cleanly on Ctrl+C or when its window closes.
+
 ## LML packaging (install.xml generation)
 
 Loose mods (a bare `.ytd`, a data file) work in LML's legacy `lml/stream` and `lml/replace` folders, but LML's Mod Manager only lists mods that have an install.xml. `lml-pack` gives them one:
@@ -147,7 +166,7 @@ The format follows seven published RDR2 packages on GitHub: `<EasyInstall>` with
 
 ## Status against the plan
 
-Phases 1 and 2 are in place, plus Phase 4's crash bisect and install.xml generation. Phase 0 (real baseline, real archives) is waiting on your PC; nothing here has run on Windows or a real RDR2 install yet.
+Phases 1 and 2 are in place, plus Phase 4's crash bisect, install.xml generation and build-folder watcher. Phase 0 (real baseline, real archives) is waiting on your PC; nothing here has run on Windows or a real RDR2 install yet.
 
 Not done yet:
 

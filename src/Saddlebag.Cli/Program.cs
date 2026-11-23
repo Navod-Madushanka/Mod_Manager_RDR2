@@ -55,6 +55,7 @@ app.Configure(c =>
         b.AddCommand<BisectResetCommand>("reset").WithDescription("End the bisect and restore your profile.");
     });
     c.AddCommand<LmlPackCommand>("lml-pack").WithDescription("Package a loose mod as an LML mod with a generated install.xml, so LML's Mod Manager lists it.");
+    c.AddCommand<WatchCommand>("watch").WithDescription("Redeploy your linked build folders (e.g. Horse Personalities bin/Release) after every build.");
     c.AddCommand<AllowCommand>("allow").WithDescription("Allow an extra file in Online mode (shows amber), e.g. x64/data/startup.meta.");
     c.AddCommand<ExpectCommand>("expect").WithDescription("Mark a vanilla file the launcher rewrites (e.g. a DLSS DLL) as expected to change.");
 

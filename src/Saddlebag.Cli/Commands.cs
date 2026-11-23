@@ -710,3 +710,54 @@ public sealed class LmlPackCommand : Command<LmlPackCommand.Settings>
         return ExitCodes.Ok;
     }
 }
+
+// ---------- Phase 4: build-folder watcher ----------
+
+public sealed class WatchCommand : Command<WatchCommand.Settings>
+{
+    public sealed class Settings : HomeSettings
+    {
+        [CommandArgument(0, "[MODS]")] [Description("Linked mods to watch. Default: every enabled linked mod.")]
+        public string[] Mods { get; set; } = [];
+        [CommandOption("--quiet <MS>")] [Description("Wait this long after the last change before deploying (default 1500).")]
+        public int QuietMs { get; set; } = 1500;
+    }
+
+    public override int Execute(CommandContext context, Settings s, CancellationToken ct)
+    {
+        using var ws = Ctx.Open(s);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        // Stop cleanly between deploys on Ctrl+C, Ctrl+Break, closing the window, or SIGTERM. A deploy in progress
+        // finishes its current step; anything left is recovered from the journal next time.
+        var signals = new[] { System.Runtime.InteropServices.PosixSignal.SIGINT, System.Runtime.InteropServices.PosixSignal.SIGQUIT,
+                              System.Runtime.InteropServices.PosixSignal.SIGTERM, System.Runtime.InteropServices.PosixSignal.SIGHUP }
+            .Select(sig => System.Runtime.InteropServices.PosixSignalRegistration.Create(sig, c => { c.Cancel = true; cts.Cancel(); }))
+            .ToList();
+
+        var watcher = new Saddlebag.Core.Watch.BuildWatcher(ws, s.Mods, TimeSpan.FromMilliseconds(Math.Max(0, s.QuietMs)), e =>
+        {
+            var (color, tag) = e.Kind switch
+            {
+                Saddlebag.Core.Watch.WatchEventKind.Deployed => ("green", "deployed"),
+                Saddlebag.Core.Watch.WatchEventKind.UpToDate => ("grey", "up to date"),
+                Saddlebag.Core.Watch.WatchEventKind.WaitingForGame => ("yellow", "waiting"),
+                Saddlebag.Core.Watch.WatchEventKind.Retrying => ("yellow", "retrying"),
+                Saddlebag.Core.Watch.WatchEventKind.Blocked or Saddlebag.Core.Watch.WatchEventKind.Error => ("red", "blocked"),
+                Saddlebag.Core.Watch.WatchEventKind.Changed => ("blue", "changed"),
+                _ => ("grey", e.Kind.ToString().ToLowerInvariant()),
+            };
+            AnsiConsole.MarkupLine($"[grey]{DateTime.Now:HH:mm:ss}[/] [{color}]{tag,-10}[/] {Markup.Escape(e.Message)}");
+            if (e.Paths is { Count: > 0 } paths)
+                foreach (var p in paths.Take(8)) AnsiConsole.MarkupLine($"           [grey]{Markup.Escape(p)}[/]");
+            if (e.Result is { Notes.Count: > 0 } r)
+                foreach (var n in r.Notes) AnsiConsole.MarkupLine($"           [yellow]•[/] {Markup.Escape(n)}");
+        });
+
+        foreach (var (id, folder) in watcher.Targets)
+            AnsiConsole.MarkupLine($"Watching [bold]{Markup.Escape(BisectView.Name(ws, id))}[/]: {Markup.Escape(folder)}");
+        AnsiConsole.MarkupLine("[grey]Build in Visual Studio as usual; each build is deployed once it's finished. Ctrl+C to stop.[/]");
+        try { watcher.Run(cts.Token); }
+        finally { foreach (var r in signals) r.Dispose(); }
+        return ExitCodes.Ok;
+    }
+}

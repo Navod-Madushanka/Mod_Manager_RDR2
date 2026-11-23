@@ -26,7 +26,8 @@ public sealed record DeployPlan(string Kind, IReadOnlyList<Step> Steps, IReadOnl
     public bool CanApply => Blockers.Count == 0;
 }
 
-public sealed record ApplyResult(int Placed, int Removed, int BackedUp, int Restored, int Rescued, IReadOnlyList<string> Notes);
+/// <param name="Skipped">Files not placed because their source changed mid-deploy (e.g. a build still writing). The next deploy places them.</param>
+public sealed record ApplyResult(int Placed, int Removed, int BackedUp, int Restored, int Rescued, IReadOnlyList<string> Notes, int Skipped = 0);
 
 public sealed class DeployException(string message) : Exception(message);
 
@@ -166,7 +167,7 @@ public sealed class Deployer(StateStore store, ModLibrary library, string home, 
 
     private ApplyResult Run(string opId)
     {
-        int placed = 0, removed = 0, backedUp = 0, restored = 0, rescued = 0;
+        int placed = 0, removed = 0, backedUp = 0, restored = 0, rescued = 0, skipped = 0;
         var notes = new List<string>();
         var allSteps = store.GetSteps(opId).Select(r => (Row: r, Step: JsonSerializer.Deserialize<Step>(r.Payload, Json)!)).ToList();
         // Prune folders for every step in the op, including ones a crashed run already finished.
@@ -180,7 +181,7 @@ public sealed class Deployer(StateStore store, ModLibrary library, string home, 
                 StepType.Remove => DoRemove(step, notes, ref rescued),
                 StepType.Restore => DoRestore(step),
                 StepType.Backup => DoBackup(step),
-                StepType.Place => DoPlace(step),
+                StepType.Place => DoPlace(step, notes, ref skipped),
                 _ => throw new InvalidOperationException(step.Type.ToString()),
             };
             AfterFileOp?.Invoke(step);
@@ -200,7 +201,7 @@ public sealed class Deployer(StateStore store, ModLibrary library, string home, 
         }
         store.CompleteOp(opId);
         PruneEmptyDirs(touchedDirs);
-        return new ApplyResult(placed, removed, backedUp, restored, rescued, notes);
+        return new ApplyResult(placed - skipped, removed, backedUp, restored, rescued, notes, skipped);
     }
 
     private Action DoRemove(Step s, List<string> notes, ref int rescued)
@@ -277,7 +278,7 @@ public sealed class Deployer(StateStore store, ModLibrary library, string home, 
         return () => store.AddBackup(new BackupRecord(s.Dest, bp, sha, s.ModId!));
     }
 
-    private Action DoPlace(Step s)
+    private Action DoPlace(Step s, List<string> notes, ref int skipped)
     {
         var full = GamePath(s.Dest);
         var method = s.Method!;
@@ -291,8 +292,14 @@ public sealed class Deployer(StateStore store, ModLibrary library, string home, 
         }
         else
         {
-            if (FileOps.Sha256(s.Source!) != s.Sha256)
-                throw new DeployException($"{s.Source} changed since it was planned. Run the command again.");
+            if (!File.Exists(s.Source!) || FileOps.Sha256(s.Source!) != s.Sha256)
+            {
+                // The source changed after planning (a build still writing). Placing it would make the ledger lie,
+                // and throwing would leave a step recovery can never finish. Skip it; the next plan places the new file.
+                skipped++;
+                notes.Add($"{s.Dest}: its source changed while deploying; skipped, the next deploy places the new version.");
+                return () => { };
+            }
             if (method == "hardlink" && !FileOps.TryHardLink(s.Source!, full))
                 method = "copy";
             if (method == "copy") FileOps.AtomicCopy(s.Source!, full);
