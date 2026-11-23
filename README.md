@@ -64,6 +64,7 @@ That gives one `publish\saddlebag.exe`.
 | `order <mod> <#>` | Priority in the active profile; the highest number wins a conflict |
 | `adopt <paths>... --name <name>` | Turn mod files you put in by hand into a tracked mod |
 | `bisect start` / `bad` / `good` / `undo` / `status` / `reset` | Find the mod that crashes the game, half the suspects per launch (see below) |
+| `updates [mods] [--refresh]`, `nexus key`, `nexus link <mod> <url>` | Check mods for newer files on Nexus (see below) |
 | `logs`, `logs show <log> [--errors] [--grep X]`, `logs follow`, `logs archive` | Hook and mod logs (see below) |
 | `watch [mods] [--quiet 1500]` | Redeploy linked build folders after every build (see below) |
 | `lml-pack <mod> [--map SRC=update:/...]` | Package a loose mod as an LML mod with a generated install.xml (see below); `--off` undoes it |
@@ -162,6 +163,21 @@ saddlebag logs follow                         # live, while the game runs
 - Logs are read while the game may still have them open, and from the end, so huge logs are fine.
 - Online mode moves logs that mods wrote into `D:\Saddlebag\logs\<time>\` first; otherwise a leftover `ScriptHookRDR2.log` would turn the check red. `saddlebag logs` still lists and reads them. Vanilla logs and paths you `allow` stay put.
 
+## Nexus update checks
+
+```text
+saddlebag nexus key --set        # paste your personal API key (nexusmods.com → Site preferences → API Keys)
+saddlebag updates                # exit code 1 when updates exist, 2 if a check failed
+```
+
+- **Linking:** importing a Nexus download (`Name-1234-1-2-1700000000.zip`) records the mod id, version and upload time from the file name; `--url <nexus page>` on import, or `saddlebag nexus link <mod> <url>` later, does it explicitly. A mod id read from a file name is a guess until the check finds the matching file.
+- **Exact when possible:** if your file is in the mod's file list (by name or upload time), Saddlebag follows Nexus' "this file was replaced by that one" chain to the newest file. Otherwise it compares version strings (`1.2.10` > `1.2.9`).
+- **Read-only:** it never downloads or changes anything. Free accounts must download through the website; the result lists each mod's files page.
+- **Polite:** results are cached for an hour (`--refresh` to skip), and it stops at the first rate-limit or connection failure instead of trying every mod.
+- **Key storage:** `$SADDLEBAG_NEXUS_KEY` wins; otherwise `nexus key --set` saves it encrypted for your Windows account (DPAPI). It's never stored in plain text or printed.
+
+Endpoints, headers (`APIKEY`, `Application-Name`, `Application-Version`) and response fields follow Nexus' own client library (node-nexus-api). Not yet tested against the live API: its host isn't reachable from the environment this was built in. A personal key is fine for your own use; publishing Saddlebag would need registering it with Nexus as an application.
+
 ## LML packaging (install.xml generation)
 
 Loose mods (a bare `.ytd`, a data file) work in LML's legacy `lml/stream` and `lml/replace` folders, but LML's Mod Manager only lists mods that have an install.xml. `lml-pack` gives them one:
@@ -181,7 +197,7 @@ The format follows seven published RDR2 packages on GitHub: `<EasyInstall>` with
 
 ## Status against the plan
 
-Phases 1 and 2 are in place, plus Phase 4's crash bisect, install.xml generation, build-folder watcher and log viewer. Left from Phase 4: Nexus update checks. Phase 0 (real baseline, real archives) is waiting on your PC; nothing here has run on Windows or a real RDR2 install yet.
+Phases 1 and 2 are in place, plus Phase 4's crash bisect, install.xml generation, build-folder watcher, log viewer and Nexus update checks. Phase 4 is complete; Phase 3 (the GUI) is next. Phase 0 (real baseline, real archives) is waiting on your PC; nothing here has run on Windows or a real RDR2 install yet.
 
 Not done yet:
 

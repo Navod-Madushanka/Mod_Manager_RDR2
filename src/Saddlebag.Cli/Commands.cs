@@ -915,3 +915,146 @@ public sealed class LogsArchiveCommand : Command<HomeSettings>
         return ExitCodes.Ok;
     }
 }
+
+// ---------- Phase 4: Nexus update checks ----------
+
+public static class NexusCli
+{
+    public static string AppVersion => typeof(NexusCli).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+
+    public static Saddlebag.Core.Nexus.NexusClient Client(Workspace ws)
+    {
+        var (key, _) = new Saddlebag.Core.Nexus.NexusKeyStore(ws.Home).Load();
+        if (key is null)
+            throw new InvalidOperationException("No Nexus API key yet. Copy your personal key from nexusmods.com (Site preferences → API Keys), then run `saddlebag nexus key --set`.");
+        return new Saddlebag.Core.Nexus.NexusClient(key, AppVersion);
+    }
+
+    public static (string Game, long Id) ParseTarget(string urlOrId) =>
+        Saddlebag.Core.Nexus.NexusNames.ParseUrl(urlOrId) is { } u ? u
+        : long.TryParse(urlOrId, out var id) ? (Saddlebag.Core.Nexus.NexusNames.Rdr2Domain, id)
+        : throw new InvalidOperationException($"'{urlOrId}' isn't a Nexus mod URL or id.");
+}
+
+public sealed class NexusKeyCommand : Command<NexusKeyCommand.Settings>
+{
+    public sealed class Settings : HomeSettings
+    {
+        [CommandOption("--set")] [Description("Save a key (asked for without echo; or piped in).")] public bool Set { get; set; }
+        [CommandOption("--clear")] [Description("Delete the saved key.")] public bool Clear { get; set; }
+        [CommandOption("--test")] [Description("Ask Nexus whether the key works.")] public bool Test { get; set; }
+    }
+
+    public override int Execute(CommandContext context, Settings s, CancellationToken ct)
+    {
+        using var ws = Ctx.Open(s);
+        var store = new Saddlebag.Core.Nexus.NexusKeyStore(ws.Home);
+        if (s.Clear) AnsiConsole.MarkupLine(store.Clear() ? "Saved key deleted." : "No saved key.");
+        if (s.Set)
+        {
+            var key = Console.IsInputRedirected
+                ? Console.In.ReadLine()?.Trim()
+                : AnsiConsole.Prompt(new TextPrompt<string>("Nexus API key:").Secret());
+            if (string.IsNullOrWhiteSpace(key)) throw new InvalidOperationException("No key given.");
+            store.Save(key);
+            AnsiConsole.MarkupLine("[green]Key saved[/], encrypted for your Windows account.");
+        }
+        var (loaded, source) = store.Load();
+        AnsiConsole.MarkupLine(loaded is null
+            ? $"Key: [red]none[/]{(source == "none" ? "" : $" [grey]({Markup.Escape(source)})[/]")}. Copy your personal key from nexusmods.com (Site preferences → API Keys), then `saddlebag nexus key --set`."
+            : $"Key: [green]set[/] [grey](from {Markup.Escape(source)})[/]");
+        if (s.Test && loaded is not null)
+        {
+            var client = new Saddlebag.Core.Nexus.NexusClient(loaded, NexusCli.AppVersion);
+            var user = client.ValidateKeyAsync(ct).GetAwaiter().GetResult();
+            AnsiConsole.MarkupLine($"[green]Works[/]: signed in as {Markup.Escape(user.Name ?? "?")}{(user.IsPremium ? " (premium)" : "")}. " +
+                                   $"[grey]{client.DailyRemaining?.ToString() ?? "?"} requests left today.[/]");
+        }
+        return ExitCodes.Ok;
+    }
+}
+
+public sealed class NexusLinkCommand : Command<NexusLinkCommand.Settings>
+{
+    public sealed class Settings : ModArgSettings
+    {
+        [CommandArgument(1, "<URL_OR_ID>")] [Description("The mod's Nexus page, e.g. https://www.nexusmods.com/reddeadredemption2/mods/1234")]
+        public string Target { get; set; } = "";
+        [CommandOption("--file <NAME>")] [Description("The archive name you downloaded, e.g. Trainer-1234-1-2-1700000000.zip, to match the exact file.")]
+        public string? File { get; set; }
+        [CommandOption("--version <VERSION>")] [Description("The version you have installed.")] public string? Version { get; set; }
+    }
+
+    public override int Execute(CommandContext context, Settings s, CancellationToken ct)
+    {
+        using var ws = Ctx.Open(s);
+        var mod = ws.Library.Require(s.Mod);
+        var (game, id) = NexusCli.ParseTarget(s.Target);
+        var existing = ws.Library.LoadManifest(mod.Id).Nexus;
+        var fileName = s.File ?? (existing?.ModId == id ? existing.FileName : null);
+        var info = fileName is null ? null : Saddlebag.Core.Nexus.NexusNames.ParseArchiveName(fileName);
+        ws.Library.SetNexusLink(mod.Id, new Saddlebag.Core.Nexus.NexusLink
+        {
+            Game = game, ModId = id, FileName = fileName, UploadedTimestamp = info?.Timestamp ?? (existing?.ModId == id ? existing.UploadedTimestamp : null),
+        }, s.Version ?? info?.Version);
+        AnsiConsole.MarkupLine($"Linked [bold]{Markup.Escape(mod.Name)}[/] to Nexus mod {id}. Check with [bold]saddlebag updates {Markup.Escape(mod.Id)}[/].");
+        return ExitCodes.Ok;
+    }
+}
+
+public sealed class NexusUnlinkCommand : Command<ModArgSettings>
+{
+    public override int Execute(CommandContext context, ModArgSettings s, CancellationToken ct)
+    {
+        using var ws = Ctx.Open(s);
+        var mod = ws.Library.Require(s.Mod);
+        ws.Library.SetNexusLink(mod.Id, null);
+        AnsiConsole.MarkupLine($"{Markup.Escape(mod.Name)} is no longer linked to Nexus.");
+        return ExitCodes.Ok;
+    }
+}
+
+public sealed class UpdatesCommand : Command<UpdatesCommand.Settings>
+{
+    public sealed class Settings : HomeSettings
+    {
+        [CommandArgument(0, "[MODS]")] [Description("Mods to check. Default: all.")] public string[] Mods { get; set; } = [];
+        [CommandOption("--refresh")] [Description("Ignore the one-hour cache.")] public bool Refresh { get; set; }
+    }
+
+    public override int Execute(CommandContext context, Settings s, CancellationToken ct)
+    {
+        using var ws = Ctx.Open(s);
+        var client = NexusCli.Client(ws);
+        var results = AnsiConsole.Status().Start("Asking Nexus…", _ =>
+            new Saddlebag.Core.Nexus.UpdateChecker(ws.Store, ws.Library, client).CheckAsync(s.Mods, s.Refresh, ct).GetAwaiter().GetResult());
+
+        var t = new Table().Border(TableBorder.Rounded).AddColumns("Mod", "Status", "Installed", "Latest", "Why");
+        foreach (var r in results.OrderBy(r => r.Status))
+        {
+            var status = r.Status switch
+            {
+                Saddlebag.Core.Nexus.UpdateStatus.UpdateAvailable => "[yellow bold]update[/]",
+                Saddlebag.Core.Nexus.UpdateStatus.OldFile => "[yellow]old file[/]",
+                Saddlebag.Core.Nexus.UpdateStatus.UpToDate => "[green]up to date[/]",
+                Saddlebag.Core.Nexus.UpdateStatus.Unavailable => "[red]unavailable[/]",
+                Saddlebag.Core.Nexus.UpdateStatus.Error => "[red]error[/]",
+                Saddlebag.Core.Nexus.UpdateStatus.NotLinked => "[grey]not linked[/]",
+                _ => "[grey]unknown[/]",
+            };
+            t.AddRow(Markup.Escape(r.ModName), status,
+                Markup.Escape(r.InstalledVersion ?? r.InstalledFile ?? "?"),
+                Markup.Escape(r.LatestVersion is null ? r.LatestFile ?? "" : r.LatestVersion + (r.LatestUploaded is { } d ? $" ({d:yyyy-MM-dd})" : "")),
+                $"[grey]{Markup.Escape(r.Detail)}[/]");
+        }
+        AnsiConsole.Write(t);
+        var updates = results.Where(r => r.Status is Saddlebag.Core.Nexus.UpdateStatus.UpdateAvailable or Saddlebag.Core.Nexus.UpdateStatus.OldFile).ToList();
+        foreach (var r in updates) AnsiConsole.MarkupLine($"  {Markup.Escape(r.ModName)}: [link]{Markup.Escape(r.Url!)}[/]");
+        if (updates.Count > 0)
+            AnsiConsole.MarkupLine("[grey]Download from the files page, then `saddlebag install <archive>`. Free accounts must download through the website.[/]");
+        if (client.RequestsMade > 0)
+            AnsiConsole.MarkupLine($"[grey]{client.RequestsMade} request(s) to Nexus; {client.DailyRemaining?.ToString() ?? "?"} left today. Results are cached for an hour.[/]");
+        if (results.Any(r => r.Status == Saddlebag.Core.Nexus.UpdateStatus.Error)) return ExitCodes.Red;
+        return updates.Count > 0 ? ExitCodes.Amber : ExitCodes.Ok;
+    }
+}

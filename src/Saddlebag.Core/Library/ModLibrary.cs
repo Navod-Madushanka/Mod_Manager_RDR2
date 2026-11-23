@@ -22,6 +22,8 @@ public sealed class ModManifest
     public string? PackageType { get; set; }
     /// <summary>Package this loose mod as an LML install.xml mod (see `saddlebag lml-pack`).</summary>
     public LmlPackOptions? LmlPack { get; set; }
+    /// <summary>The Nexus mod (and file) this came from, for update checks.</summary>
+    public Nexus.NexusLink? Nexus { get; set; }
     /// <summary>Notes from the last routing pass, e.g. files packaging had to leave alone.</summary>
     public List<string> Notes { get; set; } = [];
     public List<RoutedFile> Decisions { get; set; } = [];
@@ -84,8 +86,18 @@ public sealed class ModLibrary(StateStore store, string home, Router router)
         else File.Copy(source, Path.Combine(staging, Path.GetFileName(source))); // a single loose file, e.g. an .asi
 
         Directory.Move(staging, files);
+        // A Nexus download's name carries its mod id, version and upload time; use them when nothing better was given.
+        var link = global::Saddlebag.Core.Nexus.NexusNames.FromImport(url, isDir ? null : Path.GetFileName(source));
+        if (link is not null && version is null && !isDir &&
+            global::Saddlebag.Core.Nexus.NexusNames.ParseArchiveName(Path.GetFileName(source)) is { Version: { } v }) version = v;
         var mod = new ModRecord(id, name, version, url, sha, DateTime.UtcNow, null);
         store.UpsertMod(mod);
+        if (link is not null)
+        {
+            var manifest = LoadManifest(id);
+            manifest.Nexus = link;
+            SaveManifest(manifest);
+        }
         return new ImportResult(mod, Reroute(id), AlreadyImported: false);
     }
 
@@ -202,6 +214,17 @@ public sealed class ModLibrary(StateStore store, string home, Router router)
             Reroute(id);
             throw;
         }
+    }
+
+    /// <summary>Links (or unlinks, with null) a mod to its Nexus page. Optionally records the installed version.</summary>
+    public void SetNexusLink(string id, Nexus.NexusLink? link, string? version = null)
+    {
+        var mod = store.GetMod(id) ?? throw new InvalidOperationException($"Unknown mod '{id}'.");
+        var m = LoadManifest(id);
+        m.Nexus = link;
+        SaveManifest(m);
+        if (version is not null || link is not null)
+            store.UpsertMod(mod with { Version = version ?? mod.Version, SourceUrl = link?.FilesPage ?? mod.SourceUrl });
     }
 
     public RoutePlan SetVariant(string id, string? variant)

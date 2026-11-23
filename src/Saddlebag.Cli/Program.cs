@@ -65,6 +65,14 @@ app.Configure(c =>
         b.AddCommand<LogsFollowCommand>("follow").WithDescription("Follow logs live while the game runs.");
         b.AddCommand<LogsArchiveCommand>("archive").WithDescription("Move mod logs out of the game folder (Online mode does this itself).");
     });
+    c.AddBranch("nexus", b =>
+    {
+        b.SetDescription("Nexus Mods: API key and which Nexus page each mod came from.");
+        b.AddCommand<NexusKeyCommand>("key").WithDescription("Show, --set, --clear or --test your Nexus API key.");
+        b.AddCommand<NexusLinkCommand>("link").WithDescription("Link a mod to its Nexus page (and optionally the exact file you downloaded).");
+        b.AddCommand<NexusUnlinkCommand>("unlink").WithDescription("Remove a mod's Nexus link.");
+    });
+    c.AddCommand<UpdatesCommand>("updates").WithDescription("Check linked mods for newer files on Nexus. Read-only; exit code 1 when updates exist.");
     c.AddCommand<AllowCommand>("allow").WithDescription("Allow an extra file in Online mode (shows amber), e.g. x64/data/startup.meta.");
     c.AddCommand<ExpectCommand>("expect").WithDescription("Mark a vanilla file the launcher rewrites (e.g. a DLSS DLL) as expected to change.");
 
@@ -76,6 +84,8 @@ app.Configure(c =>
             DeployException d => d.Message,
             InvalidOperationException or FileNotFoundException or DirectoryNotFoundException or InvalidDataException => ex.Message,
             CommandAppException => ex.Message,
+            Saddlebag.Core.Nexus.NexusException => ex.Message,
+            HttpRequestException => $"Couldn't reach Nexus: {ex.Message}",
             _ => ex.ToString(),
         };
         AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(msg)}");

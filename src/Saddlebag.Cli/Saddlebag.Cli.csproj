@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>saddlebag</AssemblyName>
+    <Version>0.5.0</Version>
     <RootNamespace>Saddlebag.Cli</RootNamespace>
     <!-- Publish self-contained for win-x64 to get one exe to share (see README). -->
     <PublishSingleFile>true</PublishSingleFile>
