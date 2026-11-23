@@ -84,9 +84,9 @@ public sealed class Deployer(StateStore store, ModLibrary library, string home, 
                     blockers.Add($"{mod.Name}: {unresolved.Count} file(s) need a destination, e.g. '{unresolved[0].LibraryPath}' (`saddlebag route {mod.Id}`).");
                     continue;
                 }
-                var root = library.FilesRoot(mod);
                 candidates.AddRange(files.Where(f => f.DestPath is not null).Select(f =>
-                    new Candidate(f.DestPath!, mod.Id, mod.Name, f.LibraryPath, RelPath.ToFull(root, f.LibraryPath), f.Sha256, mod.IsLinked, pm.Priority)));
+                    new Candidate(f.DestPath!, mod.Id, mod.Name, f.LibraryPath, library.SourcePath(mod, f.LibraryPath), f.Sha256,
+                        mod.IsLinked || ModLibrary.IsGenerated(f.LibraryPath), pm.Priority)));
             }
 
             var (winners, resolveFindings) = DeployChecks.Resolve(candidates);
@@ -225,9 +225,9 @@ public sealed class Deployer(StateStore store, ModLibrary library, string home, 
     private bool Rescue(Step s, string full, string sha, List<string> notes)
     {
         var mod = s.ModId is null ? null : store.GetMod(s.ModId);
-        if (mod is not null && !mod.IsLinked && s.LibraryPath is not null)
+        if (mod is not null && !mod.IsLinked && s.LibraryPath is not null && !ModLibrary.IsGenerated(s.LibraryPath))
         {
-            var lib = RelPath.ToFull(library.FilesRoot(mod), s.LibraryPath);
+            var lib = library.SourcePath(mod, s.LibraryPath);
             if (!File.Exists(lib) || FileOps.Sha256(lib) != sha) // a hard link already shares the edit
             {
                 FileOps.EnsureParent(lib);

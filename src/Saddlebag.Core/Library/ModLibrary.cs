@@ -20,6 +20,10 @@ public sealed class ModManifest
     public string? LinkedPath { get; set; }
     public ModOverrides Overrides { get; set; } = new();
     public string? PackageType { get; set; }
+    /// <summary>Package this loose mod as an LML install.xml mod (see `saddlebag lml-pack`).</summary>
+    public LmlPackOptions? LmlPack { get; set; }
+    /// <summary>Notes from the last routing pass, e.g. files packaging had to leave alone.</summary>
+    public List<string> Notes { get; set; } = [];
     public List<RoutedFile> Decisions { get; set; } = [];
 }
 
@@ -35,6 +39,16 @@ public sealed class ModLibrary(StateStore store, string home, Router router)
     public string LibraryDir => Path.Combine(home, "library");
     public string ModDir(string id) => Path.Combine(LibraryDir, id);
     public string FilesRoot(ModRecord m) => m.LinkedPath ?? Path.Combine(ModDir(m.Id), "files");
+
+    /// <summary>Files Saddlebag writes itself (like a generated install.xml) live in library/&lt;id&gt;/generated/, never among your files.</summary>
+    public const string GeneratedPrefix = "@generated/";
+    public string GeneratedDir(string id) => Path.Combine(ModDir(id), "generated");
+    public static bool IsGenerated(string libraryPath) => libraryPath.StartsWith(GeneratedPrefix, StringComparison.Ordinal);
+
+    /// <summary>Absolute path of a mod file by its library path, including generated files.</summary>
+    public string SourcePath(ModRecord m, string libraryPath) => IsGenerated(libraryPath)
+        ? RelPath.ToFull(GeneratedDir(m.Id), libraryPath[GeneratedPrefix.Length..])
+        : RelPath.ToFull(FilesRoot(m), libraryPath);
 
     public ModRecord Require(string idOrName)
     {
@@ -145,6 +159,7 @@ public sealed class ModLibrary(StateStore store, string home, Router router)
         var m = JsonSerializer.Deserialize<ModManifest>(File.ReadAllText(p), Json) ?? new ModManifest { Id = id };
         // Restore case-insensitive keys after deserialization.
         m.Overrides.Files = new Dictionary<string, string?>(m.Overrides.Files, StringComparer.OrdinalIgnoreCase);
+        if (m.LmlPack is not null) m.LmlPack.GamePaths = new Dictionary<string, string>(m.LmlPack.GamePaths, StringComparer.OrdinalIgnoreCase);
         return m;
     }
 
@@ -172,6 +187,23 @@ public sealed class ModLibrary(StateStore store, string home, Router router)
         return Reroute(id);
     }
 
+    /// <summary>Turns LML packaging on (with options) or off for a loose mod, then reroutes. Throws if it can't apply.</summary>
+    public RoutePlan SetLmlPack(string id, LmlPackOptions? options)
+    {
+        var m = LoadManifest(id);
+        var previous = m.LmlPack;
+        m.LmlPack = options;
+        SaveManifest(m);
+        try { return Reroute(id); }
+        catch (InvalidOperationException)
+        {
+            m.LmlPack = previous; // don't leave a mod.json that can no longer route
+            SaveManifest(m);
+            Reroute(id);
+            throw;
+        }
+    }
+
     public RoutePlan SetVariant(string id, string? variant)
     {
         var m = LoadManifest(id);
@@ -188,10 +220,28 @@ public sealed class ModLibrary(StateStore store, string home, Router router)
         var root = FilesRoot(mod);
         if (!Directory.Exists(root)) throw new DirectoryNotFoundException($"Files for '{mod.Name}' are missing: {root}");
         var plan = router.Route(root, mod.Name, manifest.Overrides);
+        manifest.Notes = [];
+
+        if (manifest.LmlPack is { Enabled: true } pack)
+        {
+            var packed = LmlPackager.Apply(plan, pack, mod.Name, mod.Version, mod.SourceUrl);
+            plan = packed.Plan;
+            manifest.Notes.AddRange(packed.Notes);
+            var xmlPath = SourcePath(mod, LmlPackager.GeneratedInstallXml);
+            FileOps.EnsureParent(xmlPath);
+            // Rewrite only on change, so an unchanged package keeps its hash and isn't redeployed.
+            if (!File.Exists(xmlPath) || File.ReadAllText(xmlPath) != packed.InstallXml)
+            {
+                File.WriteAllText(xmlPath + ".tmp", packed.InstallXml);
+                File.Move(xmlPath + ".tmp", xmlPath, overwrite: true);
+            }
+        }
+        else if (Directory.Exists(GeneratedDir(id)))
+            Directory.Delete(GeneratedDir(id), true);
 
         var rows = plan.Files.Select(f =>
         {
-            var full = RelPath.ToFull(root, f.Source);
+            var full = SourcePath(mod, f.Source);
             var size = new FileInfo(full).Length;
             var sha = f.Deploys ? FileOps.Sha256(full) : "";
             return new ModFileRecord(id, f.Source, f.Dest, sha, size, f.Kind.ToString(), f.RuleId, f.Confidence.ToString());

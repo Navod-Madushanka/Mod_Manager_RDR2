@@ -658,3 +658,55 @@ public sealed class BisectResetCommand : Command<BisectResetCommand.Settings>
         return ExitCodes.Ok;
     }
 }
+
+// ---------- Phase 4: install.xml generation ----------
+
+public sealed class LmlPackCommand : Command<LmlPackCommand.Settings>
+{
+    public sealed class Settings : ModArgSettings
+    {
+        [CommandOption("--map <SRC=GAMEPATH>")]
+        [Description("Declare a file as a replacement, e.g. cameras.ymt=update:/x64/data/metadata/cameras.ymt. Repeatable.")]
+        public string[] Map { get; set; } = [];
+        [CommandOption("--unmap <SRC>")] [Description("Remove a mapping. Repeatable.")] public string[] Unmap { get; set; } = [];
+        [CommandOption("--folder <NAME>")] [Description("Folder name under lml/ (default: the mod's name).")] public string? Folder { get; set; }
+        [CommandOption("--author <NAME>")] public string? Author { get; set; }
+        [CommandOption("--off")] [Description("Stop packaging; files go back to their loose locations on the next deploy.")] public bool Off { get; set; }
+    }
+
+    public override int Execute(CommandContext context, Settings s, CancellationToken ct)
+    {
+        using var ws = Ctx.Open(s);
+        var mod = ws.Library.Require(s.Mod);
+        if (s.Off)
+        {
+            Show.Routing(ws.Library.SetLmlPack(mod.Id, null), mod.Name);
+            AnsiConsole.MarkupLine("LML packaging is [bold]off[/]. Run [bold]saddlebag deploy[/] to apply.");
+            return ExitCodes.Ok;
+        }
+
+        var current = ws.Library.LoadManifest(mod.Id).LmlPack;
+        var opt = new LmlPackOptions
+        {
+            Enabled = true,
+            Folder = s.Folder ?? current?.Folder,
+            Author = s.Author ?? current?.Author,
+            GamePaths = new Dictionary<string, string>(current?.GamePaths ?? [], StringComparer.OrdinalIgnoreCase),
+        };
+        foreach (var kv in s.Map)
+        {
+            var i = kv.IndexOf('=');
+            if (i <= 0) throw new InvalidOperationException($"--map expects SRC=GAMEPATH, got '{kv}'.");
+            opt.GamePaths[Saddlebag.Core.Util.RelPath.Normalize(kv[..i])] = kv[(i + 1)..].Trim();
+        }
+        foreach (var src in s.Unmap) opt.GamePaths.Remove(Saddlebag.Core.Util.RelPath.Normalize(src));
+
+        var plan = ws.Library.SetLmlPack(mod.Id, opt);
+        Show.Routing(plan, mod.Name);
+        foreach (var n in ws.Library.LoadManifest(mod.Id).Notes) AnsiConsole.MarkupLine($"[yellow]•[/] {Markup.Escape(n)}");
+        var xml = File.ReadAllText(ws.Library.SourcePath(mod, LmlPackager.GeneratedInstallXml));
+        AnsiConsole.Write(new Panel(Markup.Escape(xml.TrimEnd())).Header("generated install.xml").BorderColor(Color.Grey));
+        AnsiConsole.MarkupLine("Run [bold]saddlebag deploy[/] to apply. LML's Mod Manager will then list it.");
+        return ExitCodes.Ok;
+    }
+}

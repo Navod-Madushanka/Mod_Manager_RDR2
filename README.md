@@ -64,6 +64,7 @@ That gives one `publish\saddlebag.exe`.
 | `order <mod> <#>` | Priority in the active profile; the highest number wins a conflict |
 | `adopt <paths>... --name <name>` | Turn mod files you put in by hand into a tracked mod |
 | `bisect start` / `bad` / `good` / `undo` / `status` / `reset` | Find the mod that crashes the game, half the suspects per launch (see below) |
+| `lml-pack <mod> [--map SRC=update:/...]` | Package a loose mod as an LML mod with a generated install.xml (see below); `--off` undoes it |
 | `deploy --ignore-deps` | Deploy past a failed dependency check (e.g. an .asi that truly needs no Script Hook) |
 | `status`, `list`, `enable`, `disable`, `remove` | Housekeeping |
 
@@ -110,6 +111,8 @@ These run on every `plan`, `install`, `deploy` and profile switch. Check ids are
 | `missing-dep-dotnet-hook` | .NET script but no `ScriptHookRDRDotNet.asi` | Block |
 | `dotnet-version-mismatch` | .NET hook `.asi` and API DLL from different releases | Warn |
 | `game-updated` | `RDR2.exe` changed since the baseline | Warn |
+| `replace-target` | Two install.xml packages replace the same game path | Warn; LML's own load order decides |
+| `broken-install-xml` | install.xml isn't valid XML, or points at files or a streaming folder missing from the package | Warn |
 
 A loader you installed by hand (in the folder, not in the ledger) satisfies a dependency, but Online mode will flag it until you `adopt` it.
 
@@ -125,16 +128,32 @@ When the game crashes and you don't know which mod is to blame:
 
 It runs in a temporary profile, so your own profile is never edited, and its state is saved between launches. `bisect undo` takes back a wrong answer. If no single mod crashes on its own, it reports the smallest set that crashed instead of blaming an innocent mod: the crash needs two or more of those together.
 
+## LML packaging (install.xml generation)
+
+Loose mods (a bare `.ytd`, a data file) work in LML's legacy `lml/stream` and `lml/replace` folders, but LML's Mod Manager only lists mods that have an install.xml. `lml-pack` gives them one:
+
+```text
+saddlebag lml-pack coats --author Navod
+saddlebag lml-pack "No Black Bars" --map "cameras.ymt=update:/x64/data/metadata/cameras.ymt"
+saddlebag deploy
+```
+
+- Loose stream assets move to `lml/<Mod>/stream/`, declared with `<StreamingFiles>stream</StreamingFiles>`.
+- A file you `--map` to a game path becomes a `<FileReplacement>` and is stored at `lml/<Mod>/replace/<mount>/<path>`. That also answers rule 8's question for a loose data file.
+- Files in a legacy `replace/` folder stay in `lml/replace/` unless you map them: their mount path (`update:/…`) can't be worked out safely.
+- The generated install.xml lives in `library/<mod>/generated/`, never among the mod's files or your linked build folder. It's deployed as a copy, and only rewritten when its content changes.
+
+The format follows seven published RDR2 packages on GitHub: `<EasyInstall>` with `Name`, `Author`, `Version`, `Link`, `Metadata`, then `Resources/Resource` holding `StreamingFiles` and `FileReplacement` (`GamePath` with a mount such as `update:/` or `dlc_mp009:/`, and `FilePath` relative to the package). Not yet tested in LML itself.
+
 ## Status against the plan
 
-Phases 1 and 2 are in place, plus Phase 4's crash bisect. Phase 0 (real baseline, real archives) is waiting on your PC; nothing here has run on Windows or a real RDR2 install yet.
+Phases 1 and 2 are in place, plus Phase 4's crash bisect and install.xml generation. Phase 0 (real baseline, real archives) is waiting on your PC; nothing here has run on Windows or a real RDR2 install yet.
 
 Not done yet:
 
 - Rules live in `Router.cs`, not `rules.json`.
 - Rule 7's "files with a known game path" isn't implemented (needs a game-path index).
-- Replace targets declared inside `install.xml` aren't checked for collisions; that waits on the open question about RDR2's install.xml format. Folder-based `lml/replace/` collisions are caught by `same-dest`.
 - `Documents\Rockstar Games\Red Dead Redemption 2\system.xml` isn't in the baseline yet.
 - The Windows paths (`CreateHardLinkW`, case-insensitive NTFS, launcher process names, PE file versions of real hook DLLs) need a run on the real install.
 
-Open questions from the plan still to settle: LML Mod Manager's load-order storage, install.xml paths for RDR2, the V2 .NET API assembly name (rule 5 matches any `ScriptHookRDR*` reference, so either name works), and which store your install is from.
+Open questions from the plan still to settle: LML Mod Manager's load-order storage (and whether a newly deployed package needs an entry there), the V2 .NET API assembly name (rule 5 matches any `ScriptHookRDR*` reference, so either name works), and which store your install is from.

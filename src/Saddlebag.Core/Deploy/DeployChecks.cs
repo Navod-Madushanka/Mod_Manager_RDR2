@@ -28,6 +28,8 @@ public static class DeployChecks
     public const string MissingDotNetHook = "missing-dep-dotnet-hook";
     public const string DotNetMismatch = "dotnet-version-mismatch";
     public const string GameUpdated = "game-updated";
+    public const string ReplaceTarget = "replace-target";
+    public const string BrokenInstallXml = "broken-install-xml";
 
     public static readonly string[] AsiLoaders = ["dinput8.dll", "version.dll"];
 
@@ -133,6 +135,35 @@ public static class DeployChecks
             findings.Add(new(DotNetMismatch, Severity.Warn,
                 $"ScriptHookRDRDotNet.asi is v{hv} ({hook.ModName}) but ScriptHookRDRNetAPI.dll is v{av} ({api.ModName}); they must come from the same release.",
                 "Disable the mod that bundles the stray copy, or install both files from one release."));
+
+        // install.xml packages: what each declares, checked against the files actually deployed with it.
+        var packages = winners.Values
+            .Where(c => c.Dest.Split('/') is [var l, _, var f] && l.Equals("lml", StringComparison.OrdinalIgnoreCase) && f.Equals("install.xml", StringComparison.OrdinalIgnoreCase))
+            .Select(c => (Candidate: c, Folder: RelPath.Dir(c.Dest), Info: InstallXml.Read(c.Source)))
+            .ToList();
+        foreach (var (c, folder, info) in packages)
+        {
+            if (info is null)
+            {
+                findings.Add(new(BrokenInstallXml, Severity.Warn, $"{c.ModName}: {c.Dest} isn't valid XML, so LML may skip the whole package."));
+                continue;
+            }
+            var missing = info.Replacements.Where(r => r.FilePath.Length > 0 && !winners.ContainsKey(RelPath.Combine(folder, r.FilePath))).Select(r => r.FilePath)
+                .Concat(info.StreamingFolders.Where(sf => !winners.Keys.Any(k => RelPath.IsUnder(k, RelPath.Combine(folder, sf)))).Select(sf => sf + "/"))
+                .ToList();
+            if (missing.Count > 0)
+                findings.Add(new(BrokenInstallXml, Severity.Warn,
+                    $"{c.ModName}: install.xml points at {string.Join(", ", missing.Take(3))}{(missing.Count > 3 ? $" and {missing.Count - 3} more" : "")}, which aren't in the package.",
+                    "The archive may be missing files, or a file in it was skipped. Check `saddlebag route <mod>`."));
+        }
+        var targets = packages.Where(p => p.Info is not null)
+            .SelectMany(p => p.Info!.Replacements.Select(r => (r.GamePath, p.Candidate.ModName)))
+            .GroupBy(x => x.GamePath, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Select(x => x.ModName).Distinct().Count() > 1);
+        foreach (var g in targets)
+            findings.Add(new(ReplaceTarget, Severity.Warn,
+                $"{g.Key} is replaced by {string.Join(" and ", g.Select(x => x.ModName).Distinct())}; only one takes effect.",
+                "LML's own load order decides which (its Mod Manager). Saddlebag's priority doesn't apply inside LML."));
 
         if (gameUpdated)
             findings.Add(new(GameUpdated, Severity.Warn, "RDR2.exe changed since the baseline: the game updated. Hook-based mods may crash until they're updated.",
