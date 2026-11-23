@@ -101,12 +101,16 @@ public sealed class BuildWatcher
     /// <summary>Records a change. Called by the file system watcher, or directly by tests.</summary>
     public void NotifyChange(string? fullPath = null)
     {
-        lock (_gate)
+        string? rel = null;
+        if (fullPath is not null)
         {
-            var rel = fullPath is null ? null : _targets.Select(t => t.Folder).Where(f => fullPath.StartsWith(f, StringComparison.OrdinalIgnoreCase))
-                .Select(f => Path.GetFileName(f) + "/" + RelPath.From(f, fullPath)).FirstOrDefault();
-            _state.Change(DateTime.UtcNow, rel);
+            // Normalize first: on Windows a path can mix '/' and '\', and "Release2" must not match "Release".
+            var full = Path.GetFullPath(fullPath);
+            rel = _targets.Select(t => Path.GetFullPath(t.Folder).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+                .Where(f => full.StartsWith(f + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                .Select(f => Path.GetFileName(f) + "/" + RelPath.From(f, full)).FirstOrDefault();
         }
+        lock (_gate) _state.Change(DateTime.UtcNow, rel);
     }
 
     /// <summary>Runs until cancelled: an initial sync, then a redeploy after each build.</summary>

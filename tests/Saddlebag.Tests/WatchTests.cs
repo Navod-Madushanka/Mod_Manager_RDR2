@@ -92,6 +92,21 @@ public class BuildWatcherTests : IDisposable
     }
 
     [Fact]
+    public void Changed_paths_are_matched_regardless_of_separators_and_sibling_names()
+    {
+        var (ws, build, _) = Setup();
+        using var owned = ws;
+        var events = new List<WatchEvent>();
+        var w = Watcher(ws, events);
+        var mixed = build.Replace(Path.DirectorySeparatorChar, '/') + "/HorsePersonalities.ini"; // as some tools report it
+        w.NotifyChange(mixed);
+        w.NotifyChange(build + "2" + Path.DirectorySeparatorChar + "other.ini");             // a sibling folder, not ours
+        Sandbox.Write(build, "HorsePersonalities.ini", "v=9");
+        w.Step();
+        Assert.Equal(["Release/HorsePersonalities.ini"], Assert.Single(events, x => x.Kind == WatchEventKind.Changed).Paths!);
+    }
+
+    [Fact]
     public void While_the_game_runs_it_waits_then_deploys_after_it_closes()
     {
         var (ws, build, _) = Setup();
