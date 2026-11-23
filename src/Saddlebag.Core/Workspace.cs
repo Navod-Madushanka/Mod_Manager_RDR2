@@ -10,7 +10,8 @@ using Saddlebag.Core.Util;
 
 namespace Saddlebag.Core;
 
-public sealed record OnlineResult(ApplyResult Purge, VerifyReport Report);
+/// <param name="ArchivedLogs">Logs mods wrote, moved out of the game folder into home/logs/ so they don't turn Online red.</param>
+public sealed record OnlineResult(ApplyResult Purge, VerifyReport Report, IReadOnlyList<string>? ArchivedLogs = null);
 
 /// <summary>Everything Saddlebag knows about one game install. The CLI and the GUI are thin shells over this.</summary>
 public sealed class Workspace : IDisposable
@@ -22,6 +23,7 @@ public sealed class Workspace : IDisposable
     public BaselineService Baseline { get; }
     public Deployer Deployer { get; }
     public IGameGuard Guard { get; }
+    public Logs.LogService Logs { get; }
 
     private Workspace(string home, string gameDir, StateStore store, IGameGuard guard)
     {
@@ -32,6 +34,7 @@ public sealed class Workspace : IDisposable
         Library = new ModLibrary(store, home, new Router());
         Baseline = new BaselineService(store, gameDir);
         Deployer = new Deployer(store, Library, home, gameDir);
+        Logs = new Logs.LogService(store, gameDir, home);
     }
 
     public static string DbPath(string home) => Path.Combine(home, "state.db");
@@ -117,10 +120,13 @@ public sealed class Workspace : IDisposable
         if (Store.BaselineCount() == 0)
             throw new InvalidOperationException("No baseline yet, so there's nothing to verify against. Run `saddlebag baseline capture` on a clean install.");
         Prepare();
+        // Logs first: purge then prunes the mod folders they sat in (lml/, scripts/).
+        var archived = Logs.ArchiveModLogs();
         var purge = Deployer.Apply(Deployer.Plan(purge: true));
+        PruneEmptyModFolders();
         var report = Baseline.Verify(deep);
         Store.SetSetting("mode", "online");
-        return new OnlineResult(purge, report);
+        return new OnlineResult(purge, report, archived);
     }
 
     /// <summary>Story mode: put the enabled mods back. Only files that differ from the ledger move.</summary>
@@ -300,6 +306,21 @@ public sealed class Workspace : IDisposable
         var r = Deployer.Apply(plan);
         Store.SetSetting("mode", "story");
         return r;
+    }
+
+    /// <summary>lml/ and scripts/ left empty (e.g. after their logs were archived and nothing was deployed). Not in the baseline, so not vanilla.</summary>
+    private void PruneEmptyModFolders()
+    {
+        var baselineDirs = Store.GetBaseline().SelectMany(b => Enumerable.Range(1, b.Path.Count(c => c == '/'))
+            .Select(n => string.Join('/', b.Path.Split('/').Take(n)))).ToHashSet(RelPath.Comparer);
+        foreach (var area in BaselineService.SignatureFolders)
+        {
+            var full = Path.Combine(GameDir, area);
+            if (!Directory.Exists(full) || baselineDirs.Contains(area)) continue;
+            foreach (var d in Directory.EnumerateDirectories(full, "*", SearchOption.AllDirectories).OrderByDescending(d => d.Length))
+                if (!Directory.EnumerateFileSystemEntries(d).Any()) Directory.Delete(d);
+            if (!Directory.EnumerateFileSystemEntries(full).Any()) Directory.Delete(full);
+        }
     }
 
     public void CaptureBaseline(bool force, IProgress<(int, int, string)>? progress = null)

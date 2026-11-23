@@ -64,6 +64,7 @@ That gives one `publish\saddlebag.exe`.
 | `order <mod> <#>` | Priority in the active profile; the highest number wins a conflict |
 | `adopt <paths>... --name <name>` | Turn mod files you put in by hand into a tracked mod |
 | `bisect start` / `bad` / `good` / `undo` / `status` / `reset` | Find the mod that crashes the game, half the suspects per launch (see below) |
+| `logs`, `logs show <log> [--errors] [--grep X]`, `logs follow`, `logs archive` | Hook and mod logs (see below) |
 | `watch [mods] [--quiet 1500]` | Redeploy linked build folders after every build (see below) |
 | `lml-pack <mod> [--map SRC=update:/...]` | Package a loose mod as an LML mod with a generated install.xml (see below); `--off` undoes it |
 | `deploy --ignore-deps` | Deploy past a failed dependency check (e.g. an .asi that truly needs no Script Hook) |
@@ -147,6 +148,20 @@ Then build in Visual Studio as usual. The watcher:
 - reports a build that can't deploy (e.g. a new file that needs a routing answer) once, then waits for the next build;
 - refuses to run in Online mode or during a crash bisect, and stops cleanly on Ctrl+C or when its window closes.
 
+## Logs
+
+```text
+saddlebag logs                                # every log, error counts, which mods the errors mention
+saddlebag logs show ScriptHookRDR2.log --errors
+saddlebag logs follow                         # live, while the game runs
+```
+
+- Every `*.log` in the game root, `lml/` and `scripts/` is found; names aren't hard-coded, so whatever your hooks write shows up. Each gets a "probably from" mod, inferred from file names (`Trainer.log` beside `Trainer.asi`).
+- Error and warning lines are highlighted. Lines that name a mod's file (e.g. an exception in `HorsePersonalities.dll`) are tagged with that mod, a good first suspect before a crash bisect.
+- `follow` copes with the game recreating its logs on start, and picks up logs created after it started.
+- Logs are read while the game may still have them open, and from the end, so huge logs are fine.
+- Online mode moves logs that mods wrote into `D:\Saddlebag\logs\<time>\` first; otherwise a leftover `ScriptHookRDR2.log` would turn the check red. `saddlebag logs` still lists and reads them. Vanilla logs and paths you `allow` stay put.
+
 ## LML packaging (install.xml generation)
 
 Loose mods (a bare `.ytd`, a data file) work in LML's legacy `lml/stream` and `lml/replace` folders, but LML's Mod Manager only lists mods that have an install.xml. `lml-pack` gives them one:
@@ -166,7 +181,7 @@ The format follows seven published RDR2 packages on GitHub: `<EasyInstall>` with
 
 ## Status against the plan
 
-Phases 1 and 2 are in place, plus Phase 4's crash bisect, install.xml generation and build-folder watcher. Phase 0 (real baseline, real archives) is waiting on your PC; nothing here has run on Windows or a real RDR2 install yet.
+Phases 1 and 2 are in place, plus Phase 4's crash bisect, install.xml generation, build-folder watcher and log viewer. Left from Phase 4: Nexus update checks. Phase 0 (real baseline, real archives) is waiting on your PC; nothing here has run on Windows or a real RDR2 install yet.
 
 Not done yet:
 

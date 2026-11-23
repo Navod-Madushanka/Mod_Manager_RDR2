@@ -362,6 +362,8 @@ public sealed class OnlineCommand : Command<VerifySettings>
         AnsiConsole.MarkupLine("[bold]Online mode:[/] guard → purge → verify");
         var r = ws.GoOnline(s.Deep);
         Show.Applied(r.Purge);
+        if (r.ArchivedLogs is { Count: > 0 } logs)
+            AnsiConsole.MarkupLine($"Moved {logs.Count} mod log(s) out of the game folder; still readable with [bold]saddlebag logs[/].");
         return Show.Report(r.Report);
     }
 }
@@ -758,6 +760,158 @@ public sealed class WatchCommand : Command<WatchCommand.Settings>
         AnsiConsole.MarkupLine("[grey]Build in Visual Studio as usual; each build is deployed once it's finished. Ctrl+C to stop.[/]");
         try { watcher.Run(cts.Token); }
         finally { foreach (var r in signals) r.Dispose(); }
+        return ExitCodes.Ok;
+    }
+}
+
+// ---------- Phase 4: log viewer ----------
+
+public static class LogView
+{
+    public static string Color(Saddlebag.Core.Logs.LogLevel l) => l switch
+    {
+        Saddlebag.Core.Logs.LogLevel.Error => "red",
+        Saddlebag.Core.Logs.LogLevel.Warn => "yellow",
+        _ => "default",
+    };
+
+    public static void Line(string text, string? prefix = null, int? number = null, IReadOnlyList<string>? mentions = null)
+    {
+        var level = Saddlebag.Core.Logs.LogService.Classify(text);
+        var head = (prefix is null ? "" : $"[blue]{Markup.Escape(prefix)}[/] ") + (number is null ? "" : $"[grey]{number,6}[/] ");
+        var tail = mentions is { Count: > 0 } ? $"  [magenta]← {Markup.Escape(string.Join(", ", mentions))}[/]" : "";
+        AnsiConsole.MarkupLine($"{head}[{Color(level)}]{Markup.Escape(text)}[/]{tail}");
+    }
+
+    public static string Size(long b) => b < 1024 ? $"{b} B" : b < 1 << 20 ? $"{b / 1024.0:F1} KB" : $"{b / (1024.0 * 1024):F1} MB";
+}
+
+public sealed class LogsListCommand : Command<LogsListCommand.Settings>
+{
+    public sealed class Settings : HomeSettings
+    {
+        [CommandOption("--live")] [Description("Only logs in the game folder, not archived ones.")] public bool Live { get; set; }
+    }
+
+    public override int Execute(CommandContext context, Settings s, CancellationToken ct)
+    {
+        using var ws = Ctx.Open(s);
+        var logs = ws.Logs.Discover(includeArchived: !s.Live);
+        if (logs.Count == 0)
+        {
+            AnsiConsole.MarkupLine("No logs found in the game root, lml/ or scripts/. Hooks write theirs when the game runs.");
+            return ExitCodes.Ok;
+        }
+        var t = new Table().Border(TableBorder.Rounded).AddColumns("Log", "Probably from", "Size", "Modified", "Errors", "Warnings", "Errors mention");
+        foreach (var l in logs.Take(40))
+        {
+            var sum = ws.Logs.Summarize(l);
+            t.AddRow(
+                (l.Archived ? "[grey]" : "[bold]") + Markup.Escape(l.Display) + "[/]",
+                Markup.Escape(l.Vanilla ? "the game (in baseline)" : l.OwnerName ?? "?"),
+                LogView.Size(l.Size),
+                l.ModifiedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm"),
+                sum.Errors > 0 ? $"[red]{sum.Errors}[/]" : "0",
+                sum.Warnings > 0 ? $"[yellow]{sum.Warnings}[/]" : "0",
+                Markup.Escape(string.Join(", ", sum.ModMentions.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Key} ({kv.Value})"))));
+        }
+        AnsiConsole.Write(t);
+        if (logs.Count > 40) AnsiConsole.MarkupLine($"[grey]…and {logs.Count - 40} more.[/]");
+        AnsiConsole.MarkupLine("[grey]`saddlebag logs show <log> --errors` to read one. Archived logs were moved out by Online mode.[/]");
+        return ExitCodes.Ok;
+    }
+}
+
+public sealed class LogsShowCommand : Command<LogsShowCommand.Settings>
+{
+    public sealed class Settings : HomeSettings
+    {
+        [CommandArgument(0, "<LOG>")] [Description("File name or path from `saddlebag logs`, e.g. ScriptHookRDR2.log")] public string Log { get; set; } = "";
+        [CommandOption("--tail <N>")] [Description("How many lines (default 100).")] public int Tail { get; set; } = 100;
+        [CommandOption("--errors")] [Description("Only error lines.")] public bool Errors { get; set; }
+        [CommandOption("--grep <TEXT>")] [Description("Only lines containing this text.")] public string? Grep { get; set; }
+    }
+
+    public override int Execute(CommandContext context, Settings s, CancellationToken ct)
+    {
+        using var ws = Ctx.Open(s);
+        var log = ws.Logs.Find(s.Log);
+        AnsiConsole.MarkupLine($"[bold]{Markup.Escape(log.Display)}[/] [grey]({LogView.Size(log.Size)}, modified {log.ModifiedUtc.ToLocalTime():yyyy-MM-dd HH:mm}" +
+                               (log.OwnerName is null ? "" : $", probably from {Markup.Escape(log.OwnerName)}") + ")[/]");
+        var lines = ws.Logs.Read(log, Math.Max(1, s.Tail), s.Errors, s.Grep);
+        if (lines.Count == 0) AnsiConsole.MarkupLine(s.Errors || s.Grep is not null ? "[green]No matching lines.[/]" : "[grey](empty)[/]");
+        foreach (var l in lines) LogView.Line(l.Text, number: l.Number, mentions: l.MentionedMods);
+        return ExitCodes.Ok;
+    }
+}
+
+public sealed class LogsFollowCommand : Command<LogsFollowCommand.Settings>
+{
+    public sealed class Settings : HomeSettings
+    {
+        [CommandArgument(0, "[LOGS]")] [Description("Logs to follow. Default: every log in the game folder, including ones created later.")]
+        public string[] Logs { get; set; } = [];
+    }
+
+    public override int Execute(CommandContext context, Settings s, CancellationToken ct)
+    {
+        using var ws = Ctx.Open(s);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var signals = new[] { System.Runtime.InteropServices.PosixSignal.SIGINT, System.Runtime.InteropServices.PosixSignal.SIGTERM, System.Runtime.InteropServices.PosixSignal.SIGHUP }
+            .Select(sig => System.Runtime.InteropServices.PosixSignalRegistration.Create(sig, c => { c.Cancel = true; cts.Cancel(); })).ToList();
+
+        var fixedSet = s.Logs.Select(ws.Logs.Find).ToList();
+        var followers = new Dictionary<string, Saddlebag.Core.Logs.LogFollower>(StringComparer.OrdinalIgnoreCase);
+        void Refresh(bool newFromStart)
+        {
+            var current = fixedSet.Count > 0 ? fixedSet : ws.Logs.Discover(includeArchived: false);
+            foreach (var l in current.Where(l => !followers.ContainsKey(l.FullPath)))
+            {
+                // Logs that appear while following (the game just created them) are read from the start.
+                followers[l.FullPath] = new Saddlebag.Core.Logs.LogFollower(l.FullPath, fromEnd: !newFromStart);
+                if (newFromStart) AnsiConsole.MarkupLine($"[grey]New log: {Markup.Escape(l.Display)}[/]");
+            }
+        }
+        Refresh(newFromStart: false);
+        AnsiConsole.MarkupLine(followers.Count == 0
+            ? "[grey]No logs yet; waiting for the game to create them. Ctrl+C to stop.[/]"
+            : $"[grey]Following {followers.Count} log(s). Start the game; new lines appear here. Ctrl+C to stop.[/]");
+
+        var mentions = ws.Logs.MentionMatcher();
+        var lastRefresh = DateTime.UtcNow;
+        try
+        {
+            while (!cts.IsCancellationRequested)
+            {
+                foreach (var (path, f) in followers)
+                {
+                    var chunk = f.Poll();
+                    var name = Path.GetFileName(path);
+                    if (chunk.Restarted) AnsiConsole.MarkupLine($"[grey]── {Markup.Escape(name)} restarted ──[/]");
+                    foreach (var line in chunk.Lines) LogView.Line(line, followers.Count > 1 ? name : null, mentions: mentions(line));
+                }
+                if (fixedSet.Count == 0 && DateTime.UtcNow - lastRefresh > TimeSpan.FromSeconds(2))
+                {
+                    Refresh(newFromStart: true);
+                    lastRefresh = DateTime.UtcNow;
+                }
+                cts.Token.WaitHandle.WaitOne(250);
+            }
+        }
+        finally { foreach (var r in signals) r.Dispose(); }
+        return ExitCodes.Ok;
+    }
+}
+
+public sealed class LogsArchiveCommand : Command<HomeSettings>
+{
+    public override int Execute(CommandContext context, HomeSettings s, CancellationToken ct)
+    {
+        using var ws = Ctx.Open(s);
+        ws.Prepare();
+        var moved = ws.Logs.ArchiveModLogs();
+        AnsiConsole.MarkupLine(moved.Count == 0 ? "No mod logs to archive." : $"Moved {moved.Count} log(s) to {Markup.Escape(ws.Logs.ArchiveDir)}:");
+        foreach (var m in moved) AnsiConsole.MarkupLine($"  • {Markup.Escape(m)}");
         return ExitCodes.Ok;
     }
 }

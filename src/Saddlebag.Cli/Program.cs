@@ -56,6 +56,15 @@ app.Configure(c =>
     });
     c.AddCommand<LmlPackCommand>("lml-pack").WithDescription("Package a loose mod as an LML mod with a generated install.xml, so LML's Mod Manager lists it.");
     c.AddCommand<WatchCommand>("watch").WithDescription("Redeploy your linked build folders (e.g. Horse Personalities bin/Release) after every build.");
+    c.AddBranch("logs", b =>
+    {
+        b.SetDescription("Hook and mod logs: list, read, follow live. `saddlebag logs` lists them.");
+        b.SetDefaultCommand<LogsListCommand>();
+        b.AddCommand<LogsListCommand>("list").WithDescription("Logs with error counts and the mods their errors mention.");
+        b.AddCommand<LogsShowCommand>("show").WithDescription("Read a log (--errors, --grep, --tail).");
+        b.AddCommand<LogsFollowCommand>("follow").WithDescription("Follow logs live while the game runs.");
+        b.AddCommand<LogsArchiveCommand>("archive").WithDescription("Move mod logs out of the game folder (Online mode does this itself).");
+    });
     c.AddCommand<AllowCommand>("allow").WithDescription("Allow an extra file in Online mode (shows amber), e.g. x64/data/startup.meta.");
     c.AddCommand<ExpectCommand>("expect").WithDescription("Mark a vanilla file the launcher rewrites (e.g. a DLSS DLL) as expected to change.");
 
