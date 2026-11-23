@@ -1,0 +1,43 @@
+name: Build
+
+# Runs on every push and pull request, and on demand (Actions tab → Build → Run workflow).
+# Tests everything on real Windows, then builds the GUI and CLI as self-contained exes and attaches them to the run
+# as a downloadable "Saddlebag-win-x64" artifact. It does not publish releases.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Test
+        run: dotnet test -c Release --logger "console;verbosity=normal"
+
+      - name: Publish
+        shell: pwsh
+        run: |
+          $common = @('-c','Release','-r','win-x64','--self-contained','-p:DebugType=None','-p:DebugSymbols=false')
+          dotnet publish src/Saddlebag.App @common -o out/gui
+          dotnet publish src/Saddlebag.Cli @common -o out/cli
+          New-Item -ItemType Directory -Force pkg/Saddlebag/cli | Out-Null
+          Copy-Item out/gui/Saddlebag.exe pkg/Saddlebag/
+          Copy-Item out/cli/saddlebag.exe pkg/Saddlebag/cli/
+          Copy-Item .github/READ_ME_FIRST.txt "pkg/Saddlebag/READ ME FIRST.txt"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Saddlebag-win-x64
+          path: pkg/
+          retention-days: 90
