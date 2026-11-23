@@ -63,6 +63,7 @@ That gives one `publish\saddlebag.exe`.
 | `profile list/create/use/delete` | Named sets of mods (e.g. Story-Full, Story-Dev); `use` moves only the files that differ |
 | `order <mod> <#>` | Priority in the active profile; the highest number wins a conflict |
 | `adopt <paths>... --name <name>` | Turn mod files you put in by hand into a tracked mod |
+| `bisect start` / `bad` / `good` / `undo` / `status` / `reset` | Find the mod that crashes the game, half the suspects per launch (see below) |
 | `deploy --ignore-deps` | Deploy past a failed dependency check (e.g. an .asi that truly needs no Script Hook) |
 | `status`, `list`, `enable`, `disable`, `remove` | Housekeeping |
 
@@ -112,9 +113,21 @@ These run on every `plan`, `install`, `deploy` and profile switch. Check ids are
 
 A loader you installed by hand (in the folder, not in the ledger) satisfies a dependency, but Online mode will flag it until you `adopt` it.
 
+## Crash bisect
+
+When the game crashes and you don't know which mod is to blame:
+
+1. `saddlebag bisect start`. Half the suspects are deployed. Mods that ship Script Hook, LML or the .NET hook stay on every launch, because the rest can't run without them (`--keep <mod>` and `--suspect <mod>` override this).
+2. Launch Story Mode and do what made it crash. Close the game.
+3. `saddlebag bisect bad` if it crashed, `saddlebag bisect good` if not. The next set is deployed; only changed files move.
+4. Repeat until it names the culprit. 32 mods take at most 6 launches: 5 halvings plus one confirm launch with the last suspect alone.
+5. `saddlebag bisect reset --disable-culprit` (or plain `reset`) puts your profile back.
+
+It runs in a temporary profile, so your own profile is never edited, and its state is saved between launches. `bisect undo` takes back a wrong answer. If no single mod crashes on its own, it reports the smallest set that crashed instead of blaming an innocent mod: the crash needs two or more of those together.
+
 ## Status against the plan
 
-Phases 1 and 2 are in place. Phase 0 (real baseline, real archives) is waiting on your PC; nothing here has run on Windows or a real RDR2 install yet.
+Phases 1 and 2 are in place, plus Phase 4's crash bisect. Phase 0 (real baseline, real archives) is waiting on your PC; nothing here has run on Windows or a real RDR2 install yet.
 
 Not done yet:
 

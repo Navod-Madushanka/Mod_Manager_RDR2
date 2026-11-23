@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Saddlebag.Core.Baseline;
+using Saddlebag.Core.Bisect;
 using Saddlebag.Core.Deploy;
 using Saddlebag.Core.Library;
 using Saddlebag.Core.Routing;
@@ -135,6 +137,7 @@ public sealed class Workspace : IDisposable
     /// </summary>
     public ApplyResult? SwitchProfile(string idOrName, bool deploy = true)
     {
+        ThrowIfBisecting();
         var p = Store.FindProfile(idOrName) ?? throw new InvalidOperationException($"No profile '{idOrName}'. See `saddlebag profile list`.");
         Prepare();
         Store.SetActiveProfile(p.Id);
@@ -182,6 +185,121 @@ public sealed class Workspace : IDisposable
         var import = Library.Adopt(GameDir, files, name);
         Store.SetEnabled(import.Mod.Id, true);
         return new AdoptResult(import, replaced);
+    }
+
+    // ---------- crash bisect ----------
+
+    private const string BisectKey = "bisect";
+    private static readonly JsonSerializerOptions BisectJson = new() { Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } };
+
+    /// <summary>Hooks and loaders other mods depend on; turning them off would block or break the rest.</summary>
+    public static readonly string[] HookFiles = ["ScriptHookRDR2.dll", "vfs.asi", "ScriptHookRDRDotNet.asi"];
+
+    public BisectSession? LoadBisect() =>
+        Store.GetSetting(BisectKey) is { Length: > 0 } json ? JsonSerializer.Deserialize<BisectSession>(json, BisectJson) : null;
+
+    private void SaveBisect(BisectSession? s) => Store.SetSetting(BisectKey, s is null ? "" : JsonSerializer.Serialize(s, BisectJson));
+
+    public void ThrowIfBisecting()
+    {
+        if (LoadBisect() is not null)
+            throw new InvalidOperationException("A crash bisect is running. Finish it, or `saddlebag bisect reset` to go back to your profile.");
+    }
+
+    /// <summary>Mods that ship a hook (Script Hook, LML, the .NET hook) and stay on by default.</summary>
+    public bool IsHookMod(string modId) =>
+        Store.GetModFiles(modId).Any(f => f.DestPath is not null && HookFiles.Contains(f.DestPath, RelPath.Comparer));
+
+    /// <summary>
+    /// Starts a bisect over the active profile's enabled mods. Works in a temporary copy of the profile, so your
+    /// own profile is never edited, and deploys the first half to test.
+    /// </summary>
+    public (BisectSession Session, ApplyResult Applied) BisectStart(IEnumerable<string>? keep = null, IEnumerable<string>? suspect = null)
+    {
+        ThrowIfBisecting();
+        Prepare();
+        var original = Store.ActiveProfile;
+        var enabled = Store.GetProfileMods(original).Where(p => p.Enabled).Select(p => p.ModId).ToList();
+        var forceKeep = (keep ?? []).Select(k => Library.Require(k).Id).ToHashSet();
+        var forceSuspect = (suspect ?? []).Select(k => Library.Require(k).Id).ToHashSet();
+        foreach (var id in forceKeep.Concat(forceSuspect))
+            if (!enabled.Contains(id)) throw new InvalidOperationException($"{id} isn't enabled in this profile.");
+
+        bool Kept(string id) => forceKeep.Contains(id) || (!forceSuspect.Contains(id) && IsHookMod(id));
+        var session = BisectSession.Start(enabled.Where(id => !Kept(id)).ToList(), enabled.Where(Kept).ToList());
+        session.OriginalProfile = original;
+        session.OriginalMode = Store.GetSetting("mode");
+        session.BisectProfile = "bisect-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss");
+        Store.CreateProfile(session.BisectProfile, "Crash bisect", copyFrom: original);
+        try
+        {
+            var applied = ApplyBisect(session);
+            SaveBisect(session);
+            return (session, applied);
+        }
+        catch
+        {
+            Store.SetActiveProfile(original);
+            Store.DeleteProfile(session.BisectProfile);
+            throw;
+        }
+    }
+
+    /// <summary>Records whether the game crashed with the current set, then deploys the next set to test.</summary>
+    public (BisectSession Session, ApplyResult Applied) BisectAnswer(bool crashed)
+    {
+        var s = LoadBisect() ?? throw new InvalidOperationException("No bisect running. Start one with `saddlebag bisect start`.");
+        Prepare();
+        s.Answer(crashed);
+        // Save only once the next set is deployed: if it can't deploy, the answer isn't recorded and you can retry.
+        var applied = s.IsDone ? new ApplyResult(0, 0, 0, 0, 0, []) : ApplyBisect(s);
+        SaveBisect(s);
+        return (s, applied);
+    }
+
+    public (BisectSession Session, ApplyResult Applied) BisectUndo()
+    {
+        var s = LoadBisect() ?? throw new InvalidOperationException("No bisect running.");
+        Prepare();
+        s.Undo();
+        var applied = ApplyBisect(s);
+        SaveBisect(s);
+        return (s, applied);
+    }
+
+    /// <summary>Ends the bisect: back to your own profile, redeployed as it was (optionally with the culprit disabled).</summary>
+    public ApplyResult BisectReset(bool disableCulprit = false)
+    {
+        var s = LoadBisect() ?? throw new InvalidOperationException("No bisect running.");
+        Prepare();
+        if (disableCulprit)
+        {
+            if (s.Culprit is null) throw new InvalidOperationException("The bisect hasn't found a culprit to disable.");
+            Store.SetEnabled(s.Culprit, false, s.OriginalProfile);
+        }
+        Store.SetActiveProfile(s.OriginalProfile);
+        var r = s.OriginalMode == "online"
+            ? Deployer.Apply(Deployer.Plan(purge: true))
+            : Deployer.Apply(Deployer.Plan());
+        Store.SetSetting("mode", s.OriginalMode ?? "story");
+        Store.DeleteProfile(s.BisectProfile);
+        SaveBisect(null);
+        return r;
+    }
+
+    private ApplyResult ApplyBisect(BisectSession s)
+    {
+        var on = s.Enabled.ToHashSet();
+        foreach (var pm in Store.GetProfileMods(s.BisectProfile))
+            Store.SetEnabled(pm.ModId, on.Contains(pm.ModId), s.BisectProfile);
+        Store.SetActiveProfile(s.BisectProfile);
+        var plan = Deployer.Plan();
+        if (!plan.CanApply)
+            throw new DeployException("This test set can't deploy:\n- " + string.Join("\n- ", plan.Blockers) +
+                "\nThat answer wasn't recorded. Keep the mod they depend on enabled throughout: `saddlebag bisect reset`, then `bisect start --keep <mod>`.");
+        var r = Deployer.Apply(plan);
+        Store.SetSetting("mode", "story");
+        return r;
     }
 
     public void CaptureBaseline(bool force, IProgress<(int, int, string)>? progress = null)

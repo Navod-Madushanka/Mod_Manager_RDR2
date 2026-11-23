@@ -250,6 +250,7 @@ public sealed class EnableCommand : Command<ModArgSettings>
     public override int Execute(CommandContext context, ModArgSettings s, CancellationToken ct)
     {
         using var ws = Ctx.Open(s);
+        ws.ThrowIfBisecting();
         var m = ws.Library.Require(s.Mod);
         ws.Store.SetEnabled(m.Id, true);
         AnsiConsole.MarkupLine($"[green]Enabled[/] {Markup.Escape(m.Id)}. Run [bold]saddlebag deploy[/] to apply.");
@@ -262,6 +263,7 @@ public sealed class DisableCommand : Command<ModArgSettings>
     public override int Execute(CommandContext context, ModArgSettings s, CancellationToken ct)
     {
         using var ws = Ctx.Open(s);
+        ws.ThrowIfBisecting();
         var m = ws.Library.Require(s.Mod);
         ws.Store.SetEnabled(m.Id, false);
         AnsiConsole.MarkupLine($"Disabled {Markup.Escape(m.Id)}. Run [bold]saddlebag deploy[/] to apply.");
@@ -475,6 +477,7 @@ public sealed class ProfileDeleteCommand : Command<ProfileUseCommand.Settings>
     public override int Execute(CommandContext context, ProfileUseCommand.Settings s, CancellationToken ct)
     {
         using var ws = Ctx.Open(s);
+        ws.ThrowIfBisecting();
         var p = ws.Store.FindProfile(s.Profile) ?? throw new InvalidOperationException($"No profile '{s.Profile}'.");
         ws.Store.DeleteProfile(p.Id);
         AnsiConsole.MarkupLine($"Deleted profile {Markup.Escape(p.Name)}. Its mods stay in the library.");
@@ -493,6 +496,7 @@ public sealed class OrderCommand : Command<OrderCommand.Settings>
     public override int Execute(CommandContext context, Settings s, CancellationToken ct)
     {
         using var ws = Ctx.Open(s);
+        ws.ThrowIfBisecting();
         var m = ws.Library.Require(s.Mod);
         ws.Store.MoveMod(m.Id, s.Position);
         AnsiConsole.MarkupLine($"Moved {Markup.Escape(m.Id)} to #{s.Position}. Run [bold]saddlebag plan[/] to see what changes.");
@@ -522,6 +526,135 @@ public sealed class AdoptCommand : Command<AdoptCommand.Settings>
             AnsiConsole.MarkupLine("Run your launcher's [bold]verify files[/] to get the originals back, then [bold]saddlebag story[/] (it backs them up before linking the mod in).");
         }
         else AnsiConsole.MarkupLine("Run [bold]saddlebag story[/] to put them back as tracked files.");
+        return ExitCodes.Ok;
+    }
+}
+
+// ---------- Phase 4: crash bisect ----------
+
+public static class BisectView
+{
+    public static string Name(Workspace ws, string id) => ws.Store.GetMod(id)?.Name ?? id;
+
+    public static void Show(Workspace ws, Saddlebag.Core.Bisect.BisectSession s, ApplyResult? applied = null)
+    {
+        if (applied is not null && (applied.Placed + applied.Removed) > 0)
+            AnsiConsole.MarkupLine($"[grey]Game folder updated: placed {applied.Placed}, removed {applied.Removed} file(s).[/]");
+
+        switch (s.Phase)
+        {
+            case Saddlebag.Core.Bisect.BisectPhase.Found:
+                AnsiConsole.Write(new Panel($"[bold red]Culprit: {Markup.Escape(Name(ws, s.Culprit!))}[/] ({Markup.Escape(s.Culprit!)})\n" +
+                                            $"[grey]It crashes the game on its own (with only the kept mods). Found in {s.Launches} launch(es).[/]")
+                    .BorderColor(Color.Red));
+                AnsiConsole.MarkupLine("Run [bold]saddlebag bisect reset --disable-culprit[/] to go back to your profile without it, or [bold]bisect reset[/] to keep it.");
+                return;
+            case Saddlebag.Core.Bisect.BisectPhase.Interaction:
+                AnsiConsole.MarkupLine($"[yellow]No single mod crashes on its own.[/] The crash needs two or more of these {s.CrashSet.Count} mods together:");
+                foreach (var m in s.CrashSet) AnsiConsole.MarkupLine($"  • {Markup.Escape(Name(ws, m))} [grey]({Markup.Escape(m)})[/]");
+                AnsiConsole.MarkupLine("[grey]Look for mods that touch the same thing (same horse, same script). `saddlebag bisect reset` to go back.[/]");
+                return;
+            case Saddlebag.Core.Bisect.BisectPhase.NotFound:
+                AnsiConsole.MarkupLine("[yellow]None of the suspects crashed the game.[/] The cause is probably in a kept mod (Script Hook, LML, the .NET hook), the game itself, or a combination that never came together.");
+                AnsiConsole.MarkupLine($"[grey]Kept on every launch: {Markup.Escape(string.Join(", ", s.Kept.Select(k => Name(ws, k))))}. `saddlebag bisect reset` to go back.[/]");
+                return;
+        }
+
+        var step = s.Phase == Saddlebag.Core.Bisect.BisectPhase.Confirm ? "Confirm launch" : $"Launch {s.Launches + 1}";
+        AnsiConsole.MarkupLine($"[bold]{step}[/]: {s.Candidates.Count} suspect(s) left, about {s.RemainingEstimate} launch(es) to go.");
+        var t = new Table().Border(TableBorder.Simple).AddColumns("This launch", "Mod");
+        foreach (var k in s.Kept) t.AddRow("[blue]kept on[/]", Markup.Escape(Name(ws, k)));
+        foreach (var m in s.Testing) t.AddRow("[green]testing[/]", Markup.Escape(Name(ws, m)));
+        AnsiConsole.Write(t);
+        var off = s.Suspects.Count - s.Testing.Count;
+        if (off > 0) AnsiConsole.MarkupLine($"[grey]{off} other mod(s) are off for this launch.[/]");
+        AnsiConsole.MarkupLine("Launch RDR2 in [bold]Story Mode[/] and do what made it crash. Then close the game and run [bold]saddlebag bisect bad[/] (it crashed) or [bold]saddlebag bisect good[/] (it didn't).");
+    }
+}
+
+public sealed class BisectStartCommand : Command<BisectStartCommand.Settings>
+{
+    public sealed class Settings : HomeSettings
+    {
+        [CommandOption("--keep <MOD>")] [Description("Keep this mod on in every launch (e.g. an asset pack others need). Repeatable.")]
+        public string[] Keep { get; set; } = [];
+        [CommandOption("--suspect <MOD>")] [Description("Suspect a mod that would be kept on by default (Script Hook, LML, .NET hook). Repeatable.")]
+        public string[] Suspect { get; set; } = [];
+    }
+
+    public override int Execute(CommandContext context, Settings s, CancellationToken ct)
+    {
+        using var ws = Ctx.Open(s);
+        var (session, applied) = ws.BisectStart(s.Keep, s.Suspect);
+        AnsiConsole.MarkupLine($"[bold]Crash bisect started[/] on {session.Suspects.Count} suspect mod(s). Your profile isn't changed; this runs in a temporary one.");
+        BisectView.Show(ws, session, applied);
+        return ExitCodes.Ok;
+    }
+}
+
+public sealed class BisectAnswerCommand(bool crashed) : Command<HomeSettings>
+{
+    public override int Execute(CommandContext context, HomeSettings s, CancellationToken ct)
+    {
+        using var ws = Ctx.Open(s);
+        var (session, applied) = ws.BisectAnswer(crashed);
+        BisectView.Show(ws, session, applied);
+        return ExitCodes.Ok;
+    }
+}
+
+public sealed class BisectGoodCommand() : Command<HomeSettings>
+{
+    public override int Execute(CommandContext context, HomeSettings s, CancellationToken ct) => new BisectAnswerCommand(false).Execute(context, s, ct);
+}
+
+public sealed class BisectBadCommand() : Command<HomeSettings>
+{
+    public override int Execute(CommandContext context, HomeSettings s, CancellationToken ct) => new BisectAnswerCommand(true).Execute(context, s, ct);
+}
+
+public sealed class BisectStatusCommand : Command<HomeSettings>
+{
+    public override int Execute(CommandContext context, HomeSettings s, CancellationToken ct)
+    {
+        using var ws = Ctx.Open(s);
+        var session = ws.LoadBisect();
+        if (session is null) { AnsiConsole.MarkupLine("No bisect running. Start one with [bold]saddlebag bisect start[/]."); return ExitCodes.Ok; }
+        foreach (var (h, i) in session.History.Select((h, i) => (h, i)))
+            AnsiConsole.MarkupLine($"[grey]Launch {i + 1}: {h.Testing.Count} testing → {(h.Answer == true ? "[red]crashed[/]" : "[green]fine[/]")}[/]");
+        BisectView.Show(ws, session);
+        return ExitCodes.Ok;
+    }
+}
+
+public sealed class BisectUndoCommand : Command<HomeSettings>
+{
+    public override int Execute(CommandContext context, HomeSettings s, CancellationToken ct)
+    {
+        using var ws = Ctx.Open(s);
+        var (session, applied) = ws.BisectUndo();
+        AnsiConsole.MarkupLine("Took back the last answer.");
+        BisectView.Show(ws, session, applied);
+        return ExitCodes.Ok;
+    }
+}
+
+public sealed class BisectResetCommand : Command<BisectResetCommand.Settings>
+{
+    public sealed class Settings : HomeSettings
+    {
+        [CommandOption("--disable-culprit")] [Description("Disable the mod the bisect found in your profile before restoring.")]
+        public bool DisableCulprit { get; set; }
+    }
+
+    public override int Execute(CommandContext context, Settings s, CancellationToken ct)
+    {
+        using var ws = Ctx.Open(s);
+        var culprit = ws.LoadBisect()?.Culprit;
+        var r = ws.BisectReset(s.DisableCulprit);
+        AnsiConsole.MarkupLine($"Bisect ended. Back on [bold]{Markup.Escape(ws.Store.FindProfile(ws.Store.ActiveProfile)?.Name ?? ws.Store.ActiveProfile)}[/]" +
+                               (s.DisableCulprit && culprit is not null ? $", with {Markup.Escape(BisectView.Name(ws, culprit))} disabled." : "."));
+        Show.Applied(r);
         return ExitCodes.Ok;
     }
 }
