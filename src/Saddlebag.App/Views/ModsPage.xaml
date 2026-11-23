@@ -66,14 +66,56 @@
         <TextBlock Style="{StaticResource Hint}">
           <Run Text="Package type:"/> <Run Text="{Binding PackageType, Mode=OneWay}"/> <Run Text="·"/> <Run Text="{Binding NexusText, Mode=OneWay}"/>
         </TextBlock>
-        <WrapPanel Margin="0,8,0,8">
+        <WrapPanel Margin="0,8,0,4">
           <Button Content="Enable" Command="{Binding EnableCommand}"/>
-          <Button Content="Package for LML (install.xml)" Command="{Binding PackForLmlCommand}"
-                  ToolTip="Loose stream files go into an LML package; fill the LML game path column for replacement files first."/>
-          <Button Content="Unpackage" Command="{Binding UnpackCommand}" Visibility="{Binding IsLmlPacked, Converter={StaticResource BoolToVis}}"/>
-          <Button Content="Link to Nexus…" Command="{Binding LinkNexusCommand}"/>
-          <Button Content="Unlink Nexus" Command="{Binding UnlinkNexusCommand}"/>
         </WrapPanel>
+
+        <Expander Header="LML package (generated install.xml)" Margin="0,4,0,0" IsExpanded="{Binding IsLmlPacked, Mode=OneWay}">
+          <Grid Margin="0,6,0,6">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+            <TextBlock Grid.ColumnSpan="2" Style="{StaticResource Hint}" Margin="0,0,0,6"
+                       Text="Loose stream files go into lml/&lt;folder&gt;/stream. For replacement files, fill the LML game path column below first (e.g. update:/x64/data/metadata/cameras.ymt)."/>
+            <TextBlock Grid.Row="1" Text="Folder under lml/" VerticalAlignment="Center" Margin="0,0,8,4"/>
+            <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding LmlFolder, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,4"
+                     ToolTip="Empty uses the mod's name"/>
+            <TextBlock Grid.Row="2" Text="Author" VerticalAlignment="Center" Margin="0,0,8,4"/>
+            <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding LmlAuthor, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,4"/>
+            <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,4,0,0">
+              <Button Command="{Binding PackForLmlCommand}">
+                <Button.Style>
+                  <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                    <Setter Property="Content" Value="Package for LML"/>
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding IsLmlPacked}" Value="True"><Setter Property="Content" Value="Update package"/></DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </Button.Style>
+              </Button>
+              <Button Content="Unpackage" Command="{Binding UnpackCommand}" Visibility="{Binding IsLmlPacked, Converter={StaticResource BoolToVis}}"/>
+            </StackPanel>
+          </Grid>
+        </Expander>
+
+        <Expander Header="Nexus link (for update checks)" Margin="0,4,0,8">
+          <Grid Margin="0,6,0,6">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+            <TextBlock Grid.ColumnSpan="2" Text="{Binding NexusText}" Style="{StaticResource Hint}" Margin="0,0,0,6"/>
+            <TextBlock Grid.Row="1" Text="Nexus page or id" VerticalAlignment="Center" Margin="0,0,8,4"/>
+            <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding NexusTarget, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,4"/>
+            <TextBlock Grid.Row="2" Text="Downloaded file" VerticalAlignment="Center" Margin="0,0,8,4"/>
+            <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding NexusFile, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,4"
+                     ToolTip="The archive name as Nexus named it, e.g. Trainer-1234-1-2-1700000000.zip. Lets the update check match your exact file."/>
+            <TextBlock Grid.Row="3" Text="Installed version" VerticalAlignment="Center" Margin="0,0,8,4"/>
+            <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding InstalledVersion, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,4"
+                     ToolTip="Optional; read from the file name when it's a Nexus download."/>
+            <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,4,0,0">
+              <Button Content="Save link" Command="{Binding SaveNexusLinkCommand}"/>
+              <Button Content="Unlink" Command="{Binding UnlinkNexusCommand}"/>
+            </StackPanel>
+          </Grid>
+        </Expander>
         <Border Style="{StaticResource Banner}" Background="#DDF4FF" BorderBrush="#54AEFF" Visibility="{Binding NeedsVariant, Converter={StaticResource BoolToVis}}">
           <StackPanel Orientation="Horizontal">
             <TextBlock Text="This archive has several options:" VerticalAlignment="Center" Margin="0,0,8,0"/>

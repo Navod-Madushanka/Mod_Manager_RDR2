@@ -365,4 +365,84 @@ public class GuiTests : IDisposable
         Assert.True(File.Exists(_sb.GameFile("lml/bars/install.xml")));
         NoErrors();
     }
+
+    [Fact]
+    public async Task Lml_folder_and_author_are_saved_and_used()
+    {
+        await SetUpAsync();
+        await _shell.Mods.ImportAsync([Hooks(), _sb.Zip("coats", ("coat.ytd", "c"))]);
+        var coats = _shell.Mods.Items.Single(m => m.Name == "coats");
+        await _shell.Mods.Staging.LoadAsync(coats.Id);
+        _shell.Mods.Staging.LmlFolder = "Better Coats";
+        _shell.Mods.Staging.LmlAuthor = "Navod";
+        await _shell.Mods.Staging.PackForLmlCommand.ExecuteAsync(null);
+        NoErrors();
+
+        Assert.Contains(_shell.Mods.Staging.Rows, r => r.Dest == "lml/Better Coats/stream/coat.ytd");
+        await _shell.Plan.DeployCommand.ExecuteAsync(null);
+        var info = Saddlebag.Core.Routing.InstallXml.Read(_sb.GameFile("lml/Better Coats/install.xml"))!;
+        Assert.Equal("Navod", info.Author);
+
+        // Reloading shows the saved values; clearing the folder falls back to the mod's name.
+        await _shell.Mods.Staging.LoadAsync(coats.Id);
+        Assert.Equal(("Better Coats", "Navod"), (_shell.Mods.Staging.LmlFolder, _shell.Mods.Staging.LmlAuthor));
+        _shell.Mods.Staging.LmlFolder = "";
+        await _shell.Mods.Staging.PackForLmlCommand.ExecuteAsync(null);
+        Assert.Contains(_shell.Mods.Staging.Rows, r => r.Dest == "lml/coats/stream/coat.ytd");
+    }
+
+    [Fact]
+    public async Task Nexus_link_fields_set_page_exact_file_and_version()
+    {
+        await SetUpAsync();
+        await _shell.Mods.ImportAsync([_sb.Zip("trainer", ("Trainer.asi", "t"))]);
+        var mod = _shell.Mods.Items.Single();
+        await _shell.Mods.Staging.LoadAsync(mod.Id);
+        Assert.Equal("Not linked to Nexus", _shell.Mods.Staging.NexusText);
+
+        _shell.Mods.Staging.NexusTarget = "https://www.nexusmods.com/reddeadredemption2/mods/1234?tab=files";
+        _shell.Mods.Staging.NexusFile = @"C:\Downloads\Trainer-1234-1-2-1700000000.zip";
+        await _shell.Mods.Staging.SaveNexusLinkCommand.ExecuteAsync(null);
+        NoErrors();
+        Assert.Contains("exact file known", _shell.Mods.Staging.NexusText);
+        Assert.Equal("1.2", _shell.Mods.Staging.InstalledVersion);                // read from the file name
+        Assert.Equal("Trainer-1234-1-2-1700000000.zip", _shell.Mods.Staging.NexusFile); // folder stripped
+        var link = await _shell.Host.Run(ws => ws.Library.LoadManifest(mod.Id).Nexus!);
+        Assert.Equal((1234L, 1700000000L), (link.ModId, link.UploadedTimestamp!.Value));
+
+        // An explicit version wins; clearing the file field means "no exact file" in the GUI.
+        _shell.Mods.Staging.InstalledVersion = "1.2.1";
+        _shell.Mods.Staging.NexusFile = "";
+        await _shell.Mods.Staging.SaveNexusLinkCommand.ExecuteAsync(null);
+        Assert.Contains("no exact file", _shell.Mods.Staging.NexusText);
+        Assert.Equal("1.2.1", _shell.Mods.Staging.InstalledVersion);
+
+        _shell.Mods.Staging.NexusTarget = "not a link";
+        await _shell.Mods.Staging.SaveNexusLinkCommand.ExecuteAsync(null);
+        Assert.Contains("isn't a Nexus mod URL or id", _dialogs.Errors.Single().Message);
+    }
+
+    [Fact]
+    public async Task Purge_preview_shows_removals_and_restores_without_touching_files()
+    {
+        await SetUpAsync();
+        await _shell.Mods.ImportAsync([Hooks(), _sb.Zip("meta", ("x64/data/vanilla.meta", "MODDED"), ("lml/stream/m.ytd", "m"))]);
+        await _shell.Plan.RefreshAsync();
+        Assert.False(_shell.Plan.CanPurge); // nothing deployed yet
+        await _shell.Plan.DeployCommand.ExecuteAsync(null);
+        Assert.True(_shell.Plan.CanPurge);
+
+        _shell.Plan.PreviewPurge = true;
+        await _shell.Plan.RefreshAsync();
+        Assert.False(_shell.Plan.CanApply);              // Deploy is off while previewing
+        Assert.Equal(8, _shell.Plan.Steps.Count(st => st.Action == "remove"));
+        Assert.Equal("x64/data/vanilla.meta", _shell.Plan.Steps.Single(st => st.Action == "restore").Dest);
+        Assert.Contains("removes 8 file(s) and restores 1 original(s)", _shell.Plan.Summary);
+        Assert.Equal("MODDED", File.ReadAllText(_sb.GameFile("x64/data/vanilla.meta"))); // preview only
+
+        await _shell.Plan.PurgeCommand.ExecuteAsync(null);
+        Assert.False(_shell.Plan.PreviewPurge);
+        Assert.Equal("vanilla meta", File.ReadAllText(_sb.GameFile("x64/data/vanilla.meta")));
+        NoErrors();
+    }
 }

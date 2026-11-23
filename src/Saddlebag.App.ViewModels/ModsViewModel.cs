@@ -150,6 +150,15 @@ public sealed partial class StagingViewModel(ShellViewModel shell) : PageViewMod
     [ObservableProperty] private string? _modName;
     [ObservableProperty] private string? _packageType;
     [ObservableProperty] private bool _isLmlPacked;
+    /// <summary>Folder under lml/ for the package; empty means the mod's name.</summary>
+    [ObservableProperty] private string _lmlFolder = "";
+    /// <summary>Author written into the generated install.xml.</summary>
+    [ObservableProperty] private string _lmlAuthor = "";
+    /// <summary>Nexus page URL or mod id.</summary>
+    [ObservableProperty] private string _nexusTarget = "";
+    /// <summary>The archive name as downloaded from Nexus, e.g. Trainer-1234-1-2-1700000000.zip: lets the update check match the exact file.</summary>
+    [ObservableProperty] private string _nexusFile = "";
+    [ObservableProperty] private string _installedVersion = "";
     [ObservableProperty] private bool _isLinked;
     [ObservableProperty] private string? _nexusText;
     [ObservableProperty] private string? _selectedVariant;
@@ -184,7 +193,14 @@ public sealed partial class StagingViewModel(ShellViewModel shell) : PageViewMod
         PackageType = d.Plan.PackageType;
         IsLinked = d.mod.IsLinked;
         IsLmlPacked = d.manifest.LmlPack?.Enabled == true;
-        NexusText = d.manifest.Nexus is { } n ? $"Nexus mod {n.ModId}{(n.Guessed ? " (guessed from the file name)" : "")}" : "Not linked to Nexus";
+        LmlFolder = d.manifest.LmlPack?.Folder ?? "";
+        LmlAuthor = d.manifest.LmlPack?.Author ?? "";
+        var nx = d.manifest.Nexus;
+        NexusText = nx is null ? "Not linked to Nexus"
+            : $"Nexus mod {nx.ModId}{(nx.Guessed ? " (guessed from the file name)" : "")}{(nx.FileName is null ? "; no exact file, so updates are judged by version" : "; exact file known")}";
+        NexusTarget = nx is null ? "" : $"https://www.nexusmods.com/{nx.Game}/mods/{nx.ModId}";
+        NexusFile = nx?.FileName ?? "";
+        InstalledVersion = d.mod.Version ?? "";
         Rows.Clear();
         foreach (var f in d.Plan.Files.Where(f => f.Kind != FileKind.Skipped || f.RuleId == "override"))
             Rows.Add(new RouteRow(f, d.manifest.LmlPack?.GamePaths.GetValueOrDefault(f.Source)));
@@ -238,8 +254,12 @@ public sealed partial class StagingViewModel(ShellViewModel shell) : PageViewMod
     public Task SetLmlPackAsync(bool on) => Edit((ws, id) =>
     {
         if (!on) { ws.Library.SetLmlPack(id, null); return; }
-        var current = ws.Library.LoadManifest(id).LmlPack;
-        var opt = new LmlPackOptions { Enabled = true, Folder = current?.Folder, Author = current?.Author };
+        var opt = new LmlPackOptions
+        {
+            Enabled = true,
+            Folder = string.IsNullOrWhiteSpace(LmlFolder) ? null : LmlFolder.Trim(),
+            Author = string.IsNullOrWhiteSpace(LmlAuthor) ? null : LmlAuthor.Trim(),
+        };
         foreach (var r in Rows.Where(r => !string.IsNullOrWhiteSpace(r.GamePath) && !r.IsGenerated)) opt.GamePaths[r.Source] = r.GamePath.Trim();
         ws.Library.SetLmlPack(id, opt);
     });
@@ -247,17 +267,10 @@ public sealed partial class StagingViewModel(ShellViewModel shell) : PageViewMod
     [RelayCommand]
     private Task UnlinkNexusAsync() => Edit((ws, id) => ws.Library.SetNexusLink(id, null));
 
+    /// <summary>Saves the Nexus fields: page (required), downloaded file name and installed version (optional).</summary>
     [RelayCommand]
-    private Task LinkNexusAsync() => Guard(async () =>
-    {
-        if (ModId is not { } id) return;
-        if (await Dialogs.PromptAsync("Link to Nexus", "The mod's Nexus page (or its mod id):") is not { Length: > 0 } target) return;
-        var (game, modId) = NexusNames.ParseUrl(target) is { } u ? u
-            : long.TryParse(target, out var n) ? (NexusNames.Rdr2Domain, n)
-            : throw new InvalidOperationException($"'{target}' isn't a Nexus mod URL or id.");
-        var version = await Dialogs.PromptAsync("Installed version", "Which version do you have? (optional; helps the update check)");
-        await Host.Run(ws => ws.Library.SetNexusLink(id, new NexusLink { Game = game, ModId = modId }, string.IsNullOrWhiteSpace(version) ? null : version.Trim()));
-        await LoadAsync(id);
-        await Shell.Mods.RefreshAsync();
-    });
+    private Task SaveNexusLinkAsync() =>
+        string.IsNullOrWhiteSpace(NexusTarget)
+            ? Guard(() => { Shell.StatusText = "Paste the mod's Nexus page (or its mod id) first."; return Task.CompletedTask; })
+            : Edit((ws, id) => ws.Library.LinkNexus(id, NexusTarget, NexusFile, InstalledVersion, keepKnownFile: false));
 }

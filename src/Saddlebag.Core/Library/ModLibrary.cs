@@ -227,6 +227,32 @@ public sealed class ModLibrary(StateStore store, string home, Router router)
             store.UpsertMod(mod with { Version = version ?? mod.Version, SourceUrl = link?.FilesPage ?? mod.SourceUrl });
     }
 
+    /// <summary>
+    /// Links a mod to a Nexus page (URL or id). With the archive name you downloaded, the update check can match the
+    /// exact file; its upload time and version are read from the name. Keeps the known file when relinking the same mod.
+    /// </summary>
+    /// <param name="keepKnownFile">With no file name given, keep the file already known for this Nexus mod (the CLI's
+    /// behaviour). The GUI shows the field, so there an empty field means "no exact file".</param>
+    public Nexus.NexusLink LinkNexus(string id, string target, string? fileName = null, string? version = null, bool keepKnownFile = true)
+    {
+        var (game, modId) = Nexus.NexusNames.ParseTarget(target);
+        var existing = LoadManifest(id).Nexus;
+        var sameMod = keepKnownFile && existing is not null && existing.ModId == modId && existing.Game == game;
+        // Keep only the name, whichever separator a pasted path uses (Path.GetFileName ignores '\\' off Windows).
+        fileName = string.IsNullOrWhiteSpace(fileName) ? (sameMod ? existing!.FileName : null)
+            : fileName.Trim().Trim('"').Split('/', '\\').Last();
+        var info = fileName is null ? null : Nexus.NexusNames.ParseArchiveName(fileName);
+        var link = new Nexus.NexusLink
+        {
+            Game = game,
+            ModId = modId,
+            FileName = fileName,
+            UploadedTimestamp = info?.Timestamp ?? (sameMod ? existing!.UploadedTimestamp : null),
+        };
+        SetNexusLink(id, link, string.IsNullOrWhiteSpace(version) ? info?.Version : version.Trim());
+        return link;
+    }
+
     public RoutePlan SetVariant(string id, string? variant)
     {
         var m = LoadManifest(id);

@@ -930,10 +930,6 @@ public static class NexusCli
         return new Saddlebag.Core.Nexus.NexusClient(key, AppVersion);
     }
 
-    public static (string Game, long Id) ParseTarget(string urlOrId) =>
-        Saddlebag.Core.Nexus.NexusNames.ParseUrl(urlOrId) is { } u ? u
-        : long.TryParse(urlOrId, out var id) ? (Saddlebag.Core.Nexus.NexusNames.Rdr2Domain, id)
-        : throw new InvalidOperationException($"'{urlOrId}' isn't a Nexus mod URL or id.");
 }
 
 public sealed class NexusKeyCommand : Command<NexusKeyCommand.Settings>
@@ -989,14 +985,8 @@ public sealed class NexusLinkCommand : Command<NexusLinkCommand.Settings>
     {
         using var ws = Ctx.Open(s);
         var mod = ws.Library.Require(s.Mod);
-        var (game, id) = NexusCli.ParseTarget(s.Target);
-        var existing = ws.Library.LoadManifest(mod.Id).Nexus;
-        var fileName = s.File ?? (existing?.ModId == id ? existing.FileName : null);
-        var info = fileName is null ? null : Saddlebag.Core.Nexus.NexusNames.ParseArchiveName(fileName);
-        ws.Library.SetNexusLink(mod.Id, new Saddlebag.Core.Nexus.NexusLink
-        {
-            Game = game, ModId = id, FileName = fileName, UploadedTimestamp = info?.Timestamp ?? (existing?.ModId == id ? existing.UploadedTimestamp : null),
-        }, s.Version ?? info?.Version);
+        var link = ws.Library.LinkNexus(mod.Id, s.Target, s.File, s.Version);
+        var id = link.ModId;
         AnsiConsole.MarkupLine($"Linked [bold]{Markup.Escape(mod.Name)}[/] to Nexus mod {id}. Check with [bold]saddlebag updates {Markup.Escape(mod.Id)}[/].");
         return ExitCodes.Ok;
     }

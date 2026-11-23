@@ -15,14 +15,20 @@ public sealed partial class PlanViewModel(ShellViewModel shell) : PageViewModel(
     public ObservableCollection<CheckRow> Checks { get; } = [];
     public ObservableCollection<string> Blockers { get; } = [];
     [ObservableProperty] private bool _ignoreDeps;
+    /// <summary>Show what a purge would do instead of the next deploy.</summary>
+    [ObservableProperty] private bool _previewPurge;
+    [ObservableProperty] private bool _canPurge;
     [ObservableProperty] private bool _canApply;
     [ObservableProperty] private string? _summary;
 
     partial void OnIgnoreDepsChanged(bool value) => _ = Guard(RefreshAsync);
+    partial void OnPreviewPurgeChanged(bool value) => _ = Guard(RefreshAsync);
 
     public override async Task RefreshAsync()
     {
-        var plan = await Host.Run(ws => ws.Deployer.Plan(ignoreBlockingChecks: IgnoreDeps));
+        var purge = PreviewPurge;
+        var (plan, deployed) = await Host.Run(ws => (ws.Deployer.Plan(purge: purge, ignoreBlockingChecks: IgnoreDeps), ws.Store.GetDeployed().Count));
+        CanPurge = deployed > 0;
         Steps.Clear();
         foreach (var s in plan.Steps)
             Steps.Add(new StepRow(s.Type.ToString().ToLowerInvariant(), s.Dest, s.ModId ?? "",
@@ -31,7 +37,15 @@ public sealed partial class PlanViewModel(ShellViewModel shell) : PageViewModel(
         foreach (var c in plan.Checks.OrderByDescending(c => c.Severity)) Checks.Add(new CheckRow(c.Severity, c.Id, c.Message, c.Hint));
         Blockers.Clear();
         foreach (var b in plan.Blockers.Where(b => !plan.Checks.Any(c => b.StartsWith(c.Message)))) Blockers.Add(b);
-        CanApply = plan.CanApply && !plan.IsEmpty;
+        CanApply = !purge && plan.CanApply && !plan.IsEmpty;
+        if (purge)
+        {
+            var removes = plan.Steps.Count(st => st.Type == StepType.Remove);
+            var restores = plan.Steps.Count(st => st.Type == StepType.Restore);
+            Summary = plan.IsEmpty ? "Purge preview: nothing is deployed, so there's nothing to remove."
+                : $"Purge preview: removes {removes} file(s) and restores {restores} original(s). Your library is kept.";
+            return;
+        }
         Summary = plan.IsEmpty ? "Nothing to do: the game folder already matches."
             : !plan.CanApply ? "Blocked: fix the items above (or tick “ignore dependency checks” if a mod really doesn't need what's missing)."
             : $"{plan.Steps.Count} file operation(s) ready.";
@@ -57,7 +71,8 @@ public sealed partial class PlanViewModel(ShellViewModel shell) : PageViewModel(
     {
         if (!await Dialogs.ConfirmAsync("Purge", "Remove every mod file Saddlebag deployed and restore the originals? Your library is kept.")) return;
         var r = await Host.Run(ws => ws.Purge(), "Purging…");
-        Shell.StatusText = $"Purged: removed {r.Removed}, restored {r.Restored} file(s).";
+        Shell.StatusText = $"Purged: removed {r.Removed}, restored {r.Restored} file(s)." + (r.Notes.Count > 0 ? " " + string.Join(" ", r.Notes) : "");
+        PreviewPurge = false;
         await Shell.RefreshAllAsync();
     });
 }

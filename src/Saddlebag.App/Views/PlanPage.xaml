@@ -8,8 +8,11 @@
       <StackPanel Orientation="Horizontal" Margin="0,12,0,8">
         <Button Content="Deploy" Style="{StaticResource PrimaryButton}" Command="{Binding DeployCommand}" IsEnabled="{Binding CanApply}"/>
         <Button Content="Refresh plan" Command="{Binding RefreshCommand}"/>
-        <Button Content="Purge everything…" Command="{Binding PurgeCommand}"/>
-        <CheckBox Content="Ignore dependency checks" IsChecked="{Binding IgnoreDeps}" VerticalAlignment="Center" Margin="8,0,0,0"
+        <Button Content="Purge everything…" Command="{Binding PurgeCommand}" IsEnabled="{Binding CanPurge}"/>
+        <CheckBox Content="Preview purge" IsChecked="{Binding PreviewPurge}" VerticalAlignment="Center" Margin="8,0,0,0"
+                  ToolTip="Show what Purge would remove and restore, instead of the next deploy."/>
+        <CheckBox Content="Ignore dependency checks" IsChecked="{Binding IgnoreDeps}" VerticalAlignment="Center" Margin="12,0,0,0"
+                  IsEnabled="{Binding PreviewPurge, Converter={StaticResource InverseBool}}"
                   ToolTip="Deploy even if, say, an .asi seems to lack Script Hook. Only if you know it doesn't need it."/>
       </StackPanel>
       <TextBlock Text="{Binding Summary}" FontWeight="SemiBold" Margin="0,0,0,8"/>

@@ -59,6 +59,12 @@ public static partial class NexusNames
         return new ArchiveNameInfo(null, null, ts);
     }
 
+    /// <summary>A Nexus mod page URL, or a bare RDR2 mod id.</summary>
+    public static (string Game, long ModId) ParseTarget(string urlOrId) =>
+        ParseUrl(urlOrId) is { } u ? u
+        : long.TryParse(urlOrId.Trim(), out var id) && id > 0 ? (Rdr2Domain, id)
+        : throw new InvalidOperationException($"'{urlOrId}' isn't a Nexus mod URL or id.");
+
     public static NexusLink? FromImport(string? url, string? archiveFileName)
     {
         var info = archiveFileName is null ? null : ParseArchiveName(archiveFileName);

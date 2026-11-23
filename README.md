@@ -52,8 +52,8 @@ That gives `publish-gui\Saddlebag.exe`. Both use the same Saddlebag folder, so y
 | Page | What it does |
 | --- | --- |
 | Online / Story | Go Online (purge, restore, verify) or back to Story; the verify result in green, amber or red; tick strays to adopt them as a mod, or allow / expect a path |
-| Mods | Drop zone for archives and folders, Link build folder, the library with the winner on top (▲▼ to change priority), and the routing table for the selected mod: source, destination, rule, confidence, why, with Apply / Skip / Reset per file, variant picker, LML packaging and Nexus link |
-| Deploy | The exact plan, every check with its hint, Deploy, Purge, and "ignore dependency checks" |
+| Mods | Drop zone for archives and folders, Link build folder, the library with the winner on top (▲▼ to change priority), and the routing table for the selected mod: source, destination, rule, confidence, why, with Apply / Skip / Reset per file, a variant picker, an LML package panel (folder under lml/, author, per-file game paths) and a Nexus link panel (page, downloaded file name for exact matching, installed version) |
+| Deploy | The exact plan, every check with its hint, Deploy, "ignore dependency checks", and Purge with a preview of what it removes and restores |
 | Profiles | Create, switch (only the diff moves), delete |
 | Crash bisect | Choose what stays on, then "It crashed" / "It ran fine" until it names the culprit |
 | Logs | All logs with error counts and the mods they mention; filter, errors only, follow live |
