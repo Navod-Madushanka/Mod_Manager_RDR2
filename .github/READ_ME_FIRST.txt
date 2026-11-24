@@ -1,22 +1,33 @@
-Saddlebag - TEST BUILD (expect rough edges)
+Saddlebag - mods for Story Mode, a clean game for Online
 
-Nothing to install: .NET is built in. Unzip anywhere and run.
+Nothing to install. Unzip anywhere and double-click Saddlebag.exe.
+(If Windows says "Windows protected your PC", click "More info", then
+"Run anyway". The app isn't signed yet.)
 
-  Saddlebag.exe       the app (window)
-  cli\saddlebag.exe   the same features from a command prompt
+First time
+  Saddlebag finds your game (Steam, Epic or Rockstar Games Launcher) and
+  walks you through a short setup:
+    1. Confirm the game it found.
+    2. If you already have mods, it takes them over (nothing is deleted).
+    3. Your launcher checks the game files once (Steam opens by itself).
+    4. Saddlebag takes a snapshot of your clean game.
 
-Windows may say "Windows protected your PC" because the exe isn't signed:
-click "More info", then "Run anyway".
+Every day
+  - Add mods: drop the mod's .zip/.7z/.rar onto the window, or click
+    "Add mods". If Saddlebag needs to know something, it asks.
+  - Turn a mod on or off with its tick box. Changes apply right away.
+  - Before playing Online: click "Get ready for Online". When it says
+    "Ready for Online", start the game and pick Red Dead Online.
+  - Back to Story: click "Turn mods back on".
 
-First run:
-  1. Close RDR2 and the Rockstar launcher.
-  2. Move any mods you already have out of the game folder, then use your
-     launcher's "Verify game files".
-  3. In Saddlebag: pick the folder with RDR2.exe and a Saddlebag folder on the
-     SAME drive (e.g. D:\Saddlebag), then Settings > Capture baseline.
-  4. Drop mod archives on the Mods page, then Deploy.
+Close the game before changing anything; Saddlebag will remind you.
 
-Going Online removes mods and checks the folder matches your clean baseline.
-Green means the files match; it can't promise anything about bans.
+Saddlebag checks that your game files are back to the original. It can't
+promise anything about bans.
 
-Problems? Screenshots and the text of any error message help most.
+If your game is in Program Files, Saddlebag may ask to restart as
+administrator so it can change files there.
+
+Power users: tick "Advanced" (top right) for profiles, where each file
+goes, the crash finder, logs, Nexus update checks and more. The
+command-line version is cli\saddlebag.exe.

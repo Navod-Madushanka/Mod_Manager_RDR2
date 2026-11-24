@@ -2,10 +2,11 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:v="clr-namespace:Saddlebag.App.Views"
-        Title="Saddlebag" Width="1180" Height="780" MinWidth="900" MinHeight="560"
-        Background="White" Foreground="{StaticResource Ink}" FontSize="13">
+        Title="Saddlebag: RDR2 mod manager" Width="1100" Height="760" MinWidth="760" MinHeight="520"
+        Background="White" Foreground="{StaticResource Ink}" FontSize="13"
+        AllowDrop="True" DragOver="Window_DragOver" Drop="Window_Drop">
   <DockPanel>
-    <!-- Status bar: busy text, last message, last error -->
+    <!-- Status bar: what Saddlebag is doing, and the last message or error -->
     <Border DockPanel.Dock="Bottom" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="12,5">
       <DockPanel>
         <ProgressBar DockPanel.Dock="Left" Width="90" Height="10" Margin="0,0,10,0" IsIndeterminate="True"
@@ -20,70 +21,69 @@
 
     <Grid>
       <!-- First run -->
-      <v:SetupView DataContext="{Binding Setup}" Visibility="{Binding DataContext.NeedsSetup, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"/>
+      <v:SetupWizard DataContext="{Binding Wizard}"
+                     Visibility="{Binding DataContext.NeedsSetup, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"/>
 
       <DockPanel Visibility="{Binding NeedsSetup, Converter={StaticResource InverseBoolToVis}}">
-        <!-- Header: the one Online/Story switch, profile, pending changes, banners -->
-        <Border DockPanel.Dock="Top" Padding="16,12" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1">
+        <!-- Header -->
+        <Border DockPanel.Dock="Top" Padding="20,10" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1">
           <StackPanel>
             <DockPanel>
-              <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
-                <TextBlock Text="Saddlebag" FontSize="20" FontWeight="Bold" Foreground="{StaticResource Accent}" Margin="0,0,20,0"/>
-                <TextBlock Text="Mode:" VerticalAlignment="Center" Foreground="{StaticResource Muted}" Margin="0,0,6,0"/>
-                <TextBlock Text="{Binding ModeText}" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,12,0"/>
-                <Button Command="{Binding Mode.ToggleModeCommand}" Style="{StaticResource PrimaryButton}">
-                  <Button.Content>
-                    <TextBlock>
-                      <TextBlock.Style>
-                        <Style TargetType="TextBlock">
-                          <Setter Property="Text" Value="Go Online (verify clean)"/>
-                          <Style.Triggers>
-                            <DataTrigger Binding="{Binding Mode.IsOnline}" Value="True">
-                              <Setter Property="Text" Value="Back to Story (deploy mods)"/>
-                            </DataTrigger>
-                          </Style.Triggers>
-                        </Style>
-                      </TextBlock.Style>
-                    </TextBlock>
-                  </Button.Content>
-                </Button>
+              <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                <!-- Advanced-only controls -->
+                <StackPanel Orientation="Horizontal" Visibility="{Binding AdvancedMode, Converter={StaticResource BoolToVis}}">
+                  <TextBlock VerticalAlignment="Center" Margin="0,0,12,0" Foreground="{StaticResource WarnBrush}"
+                             Visibility="{Binding PendingChanges, Converter={StaticResource CountToVis}}">
+                    <Run Text="{Binding PendingChanges, Mode=OneWay}"/><Run Text=" change(s) not deployed yet"/>
+                  </TextBlock>
+                  <TextBlock Text="Profile:" VerticalAlignment="Center" Foreground="{StaticResource Muted}" Margin="0,0,6,0"/>
+                  <ComboBox Width="160" ItemsSource="{Binding Profiles.Items}" DisplayMemberPath="Name" SelectedItem="{Binding Profiles.Picked}" Margin="0,0,12,0"/>
+                  <Button Content="Refresh" Command="{Binding RefreshAllCommand}"/>
+                </StackPanel>
+                <CheckBox Content="Advanced" IsChecked="{Binding AdvancedMode}" VerticalAlignment="Center" Margin="8,0,0,0"
+                          ToolTip="Show every tool: profiles, where each file goes, crash finder, logs, updates and settings."/>
               </StackPanel>
-              <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                <TextBlock VerticalAlignment="Center" Margin="0,0,12,0" Foreground="{StaticResource WarnBrush}"
-                           Visibility="{Binding PendingChanges, Converter={StaticResource CountToVis}}">
-                  <Run Text="{Binding PendingChanges, Mode=OneWay}"/><Run Text=" change(s) not deployed yet"/>
-                </TextBlock>
-                <TextBlock Text="Profile:" VerticalAlignment="Center" Foreground="{StaticResource Muted}" Margin="0,0,6,0"/>
-                <ComboBox Width="170" ItemsSource="{Binding Profiles.Items}" DisplayMemberPath="Name" SelectedItem="{Binding Profiles.Picked}" Margin="0,0,8,0"/>
-                <Button Content="Refresh" Command="{Binding RefreshAllCommand}"/>
+              <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="Saddlebag" FontSize="20" FontWeight="Bold" Foreground="{StaticResource Accent}" Margin="0,0,10,0"/>
+                <TextBlock Text="mods for Story, clean for Online" VerticalAlignment="Center" Foreground="{StaticResource Muted}"/>
               </StackPanel>
             </DockPanel>
-            <Border Style="{StaticResource Banner}" Margin="0,10,0,0" Background="#FFF8C5" BorderBrush="#D4A72C"
-                    Visibility="{Binding BaselineBanner, Converter={StaticResource NullToVis}}">
-              <TextBlock Text="{Binding BaselineBanner}" TextWrapping="Wrap"/>
-            </Border>
-            <Border Style="{StaticResource Banner}" Background="#FFF8C5" BorderBrush="#D4A72C"
-                    Visibility="{Binding GameUpdatedBanner, Converter={StaticResource NullToVis}}">
-              <TextBlock Text="{Binding GameUpdatedBanner}" TextWrapping="Wrap"/>
-            </Border>
-            <Border Style="{StaticResource Banner}" Background="#DDF4FF" BorderBrush="#54AEFF"
+            <StackPanel Visibility="{Binding AdvancedMode, Converter={StaticResource BoolToVis}}">
+              <Border Style="{StaticResource Banner}" Margin="0,10,0,0" Background="#FFF8C5" BorderBrush="#D4A72C"
+                      Visibility="{Binding BaselineBanner, Converter={StaticResource NullToVis}}">
+                <TextBlock Text="{Binding BaselineBanner}" TextWrapping="Wrap"/>
+              </Border>
+              <Border Style="{StaticResource Banner}" Background="#FFF8C5" BorderBrush="#D4A72C"
+                      Visibility="{Binding GameUpdatedBanner, Converter={StaticResource NullToVis}}">
+                <TextBlock Text="{Binding GameUpdatedBanner}" TextWrapping="Wrap"/>
+              </Border>
+            </StackPanel>
+            <Border Style="{StaticResource Banner}" Margin="0,10,0,0" Background="#DDF4FF" BorderBrush="#54AEFF"
                     Visibility="{Binding BisectBanner, Converter={StaticResource NullToVis}}">
               <TextBlock Text="{Binding BisectBanner}" TextWrapping="Wrap"/>
             </Border>
           </StackPanel>
         </Border>
 
-        <TabControl Margin="8" BorderBrush="{StaticResource Line}">
-          <TabItem Header="Online / Story"><v:ModePage DataContext="{Binding Mode}"/></TabItem>
-          <TabItem Header="Mods"><v:ModsPage DataContext="{Binding Mods}"/></TabItem>
-          <TabItem Header="Deploy"><v:PlanPage DataContext="{Binding Plan}"/></TabItem>
-          <TabItem Header="Profiles"><v:ProfilesPage DataContext="{Binding Profiles}"/></TabItem>
-          <TabItem Header="Crash bisect"><v:BisectPage DataContext="{Binding Bisect}"/></TabItem>
-          <TabItem Header="Logs"><v:LogsPage DataContext="{Binding Logs}"/></TabItem>
-          <TabItem Header="Dev watch"><v:WatchPage DataContext="{Binding Watch}"/></TabItem>
-          <TabItem Header="Updates"><v:UpdatesPage DataContext="{Binding Updates}"/></TabItem>
-          <TabItem Header="Settings"><v:SettingsPage DataContext="{Binding Settings}"/></TabItem>
-        </TabControl>
+        <Grid>
+          <!-- Everyday: one screen -->
+          <v:HomePage DataContext="{Binding Home}"
+                      Visibility="{Binding DataContext.AdvancedMode, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource InverseBoolToVis}}"/>
+
+          <!-- Advanced: every tool -->
+          <TabControl Margin="8" BorderBrush="{StaticResource Line}" Visibility="{Binding AdvancedMode, Converter={StaticResource BoolToVis}}">
+            <TabItem Header="Home"><v:HomePage DataContext="{Binding Home}"/></TabItem>
+            <TabItem Header="Online / Story"><v:ModePage DataContext="{Binding Mode}"/></TabItem>
+            <TabItem Header="Mods"><v:ModsPage DataContext="{Binding Mods}"/></TabItem>
+            <TabItem Header="Deploy"><v:PlanPage DataContext="{Binding Plan}"/></TabItem>
+            <TabItem Header="Profiles"><v:ProfilesPage DataContext="{Binding Profiles}"/></TabItem>
+            <TabItem Header="Crash finder"><v:BisectPage DataContext="{Binding Bisect}"/></TabItem>
+            <TabItem Header="Logs"><v:LogsPage DataContext="{Binding Logs}"/></TabItem>
+            <TabItem Header="Dev watch"><v:WatchPage DataContext="{Binding Watch}"/></TabItem>
+            <TabItem Header="Updates"><v:UpdatesPage DataContext="{Binding Updates}"/></TabItem>
+            <TabItem Header="Settings"><v:SettingsPage DataContext="{Binding Settings}"/></TabItem>
+          </TabControl>
+        </Grid>
       </DockPanel>
     </Grid>
   </DockPanel>

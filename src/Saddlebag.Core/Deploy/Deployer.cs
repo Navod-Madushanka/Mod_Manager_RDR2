@@ -20,8 +20,10 @@ public sealed record Step(
     string? Method = null,
     string? Note = null);
 
+/// <param name="LeftOut">Mods not included because they still need a choice (only with leaveOutUnfinished).</param>
 public sealed record DeployPlan(string Kind, IReadOnlyList<Step> Steps, IReadOnlyList<CheckFinding> Checks, IReadOnlyList<string> Blockers)
 {
+    public IReadOnlyList<string> LeftOut { get; init; } = [];
     public bool IsEmpty => Steps.Count == 0;
     public bool CanApply => Blockers.Count == 0;
 }
@@ -55,8 +57,11 @@ public sealed class Deployer(StateStore store, ModLibrary library, string home, 
     /// With <paramref name="purge"/>, the target is no mods at all. Blocking checks (missing dependencies)
     /// stop the plan unless <paramref name="ignoreBlockingChecks"/> is set.
     /// </summary>
-    public DeployPlan Plan(bool purge = false, bool ignoreBlockingChecks = false)
+    /// <param name="leaveOutUnfinished">Mods that still need a choice (a variant, or where some files go) are left out instead
+    /// of blocking everything; they're listed in <see cref="DeployPlan.LeftOut"/>. The simple Home screen uses this.</param>
+    public DeployPlan Plan(bool purge = false, bool ignoreBlockingChecks = false, bool leaveOutUnfinished = false)
     {
+        var leftOut = new List<string>();
         var blockers = new List<string>();
         var candidates = new List<Candidate>();
         var checks = new List<CheckFinding>();
@@ -76,6 +81,7 @@ public sealed class Deployer(StateStore store, ModLibrary library, string home, 
                 var manifest = library.LoadManifest(mod.Id);
                 if (manifest.PackageType == "variants")
                 {
+                    if (leaveOutUnfinished) { leftOut.Add(mod.Id); continue; }
                     blockers.Add($"{mod.Name}: pick a variant first (`saddlebag route {mod.Id} --variant <folder>`).");
                     continue;
                 }
@@ -83,6 +89,7 @@ public sealed class Deployer(StateStore store, ModLibrary library, string home, 
                 var unresolved = files.Where(f => f.DestPath is null && f.Kind is "Data" or "Unknown").ToList();
                 if (unresolved.Count > 0)
                 {
+                    if (leaveOutUnfinished) { leftOut.Add(mod.Id); continue; }
                     blockers.Add($"{mod.Name}: {unresolved.Count} file(s) need a destination, e.g. '{unresolved[0].LibraryPath}' (`saddlebag route {mod.Id}`).");
                     continue;
                 }
@@ -138,7 +145,7 @@ public sealed class Deployer(StateStore store, ModLibrary library, string home, 
         }
 
         var steps = removes.Concat(restores).Concat(backupSteps).Concat(places).ToList();
-        return new DeployPlan(purge ? "purge" : "deploy", steps, checks, blockers);
+        return new DeployPlan(purge ? "purge" : "deploy", steps, checks, blockers) { LeftOut = leftOut };
     }
 
     private string UniqueBackupPath(string dest, HashSet<string> reserved)

@@ -1,0 +1,88 @@
+<UserControl x:Class="Saddlebag.App.Views.SetupWizard"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <Border Style="{StaticResource Card}" MaxWidth="660" Margin="24" HorizontalAlignment="Center" VerticalAlignment="Center" Background="{StaticResource Panel}">
+      <StackPanel>
+        <TextBlock Foreground="{StaticResource Muted}" Margin="0,0,0,8">
+          <Run Text="Setup · step"/> <Run Text="{Binding StepNumber, Mode=OneWay}"/> <Run Text="of 5"/>
+        </TextBlock>
+
+        <!-- 1. Find the game -->
+        <StackPanel Visibility="{Binding Step, Converter={StaticResource StepToVis}, ConverterParameter=FindGame}">
+          <TextBlock Text="Let's find Red Dead Redemption 2" Style="{StaticResource H1}"/>
+          <TextBlock Text="{Binding FindText}" Style="{StaticResource Hint}" Margin="0,0,0,10"/>
+          <ListBox ItemsSource="{Binding Installs}" SelectedItem="{Binding Selected}" MinHeight="60" MaxHeight="180" Margin="0,0,0,8"
+                   Visibility="{Binding Installs.Count, Converter={StaticResource CountToVis}}">
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <StackPanel Margin="4,6">
+                  <TextBlock Text="{Binding Title}" FontWeight="SemiBold"/>
+                  <TextBlock Text="{Binding Folder}" Foreground="{StaticResource Muted}"/>
+                </StackPanel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          <Button Content="Choose folder…" Command="{Binding BrowseCommand}" HorizontalAlignment="Left" Margin="0,0,0,14"/>
+          <Expander Header="Where Saddlebag keeps your mods" Margin="0,0,0,16">
+            <StackPanel Margin="0,6,0,0">
+              <TextBlock Style="{StaticResource Hint}" Text="Best on the same drive as the game, so mods take no extra space. The suggested folder is fine for almost everyone."/>
+              <DockPanel Margin="0,6,0,0">
+                <Button DockPanel.Dock="Right" Content="Change…" Command="{Binding PickHomeCommand}" Margin="8,0,0,0"/>
+                <TextBox Text="{Binding HomeDir, UpdateSourceTrigger=PropertyChanged}" Padding="4"/>
+              </DockPanel>
+            </StackPanel>
+          </Expander>
+          <Button Content="Use this game" Style="{StaticResource BigButton}" Command="{Binding UseThisGameCommand}" HorizontalAlignment="Left"/>
+        </StackPanel>
+
+        <!-- 1b. Needs admin -->
+        <StackPanel Visibility="{Binding Step, Converter={StaticResource StepToVis}, ConverterParameter=NeedsAdmin}">
+          <TextBlock Text="Saddlebag needs permission" Style="{StaticResource H1}"/>
+          <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,16"
+                     Text="Your game is in a protected folder (such as Program Files). To put mods there, Saddlebag has to run as administrator. Windows will ask you to confirm."/>
+          <StackPanel Orientation="Horizontal">
+            <Button Content="Restart as administrator" Style="{StaticResource BigButton}" Command="{Binding RestartAsAdminCommand}"/>
+            <Button Content="Back" Command="{Binding BackToFindCommand}" Margin="12,0,0,0"/>
+          </StackPanel>
+          <TextBlock Text="{Binding FindText}" Foreground="{StaticResource WarnBrush}" TextWrapping="Wrap" Margin="0,12,0,0"/>
+        </StackPanel>
+
+        <!-- 2. Mods that are already installed -->
+        <StackPanel Visibility="{Binding Step, Converter={StaticResource StepToVis}, ConverterParameter=ExistingMods}">
+          <TextBlock Text="You already have some mods installed" Style="{StaticResource H1}"/>
+          <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,10"
+                     Text="Saddlebag will move them into its own folder and look after them from now on, so you can switch them off for Online and back on for Story. Nothing is deleted."/>
+          <ListBox ItemsSource="{Binding ExistingMods}" MaxHeight="200" FontFamily="Consolas" FontSize="12" Margin="0,0,0,16"/>
+          <Button Content="Take them over" Style="{StaticResource BigButton}" Command="{Binding TakeOverModsCommand}" HorizontalAlignment="Left"/>
+        </StackPanel>
+
+        <!-- 3. Repair game files -->
+        <StackPanel Visibility="{Binding Step, Converter={StaticResource StepToVis}, ConverterParameter=Verify}">
+          <TextBlock Text="Repair the game files once" Style="{StaticResource H1}"/>
+          <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,8"
+                     Text="So Saddlebag starts from a clean game, let your launcher check the game files. It fixes anything a past mod changed. It takes a few minutes."/>
+          <TextBlock Text="{Binding VerifyHelp}" TextWrapping="Wrap" FontWeight="SemiBold" Margin="0,0,0,12"/>
+          <Button Content="Open Steam and verify" Command="{Binding OpenVerifyCommand}" HorizontalAlignment="Left" Margin="0,0,0,14"
+                  Visibility="{Binding CanOpenVerify, Converter={StaticResource BoolToVis}}"/>
+          <Button Content="Done, the files are verified" Style="{StaticResource BigButton}" Command="{Binding VerifiedCommand}" HorizontalAlignment="Left"/>
+          <Button Content="My game has never been modded, skip this" Style="{StaticResource LinkButton}" Command="{Binding VerifiedCommand}" Margin="0,12,0,0" HorizontalAlignment="Left"/>
+        </StackPanel>
+
+        <!-- 4. Snapshot -->
+        <StackPanel Visibility="{Binding Step, Converter={StaticResource StepToVis}, ConverterParameter=Snapshot}">
+          <TextBlock Text="Taking a snapshot of your clean game" Style="{StaticResource H1}"/>
+          <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,12" Text="Saddlebag remembers what every original file looks like, so it can prove the game is clean before you play Online. This can take a few minutes."/>
+          <ProgressBar Height="14" Maximum="1" Value="{Binding Progress}"/>
+        </StackPanel>
+
+        <!-- 5. Done -->
+        <StackPanel Visibility="{Binding Step, Converter={StaticResource StepToVis}, ConverterParameter=Done}">
+          <TextBlock Text="All set!" Style="{StaticResource H1}"/>
+          <TextBlock Text="{Binding DoneText}" TextWrapping="Wrap" Margin="0,0,0,16"/>
+          <Button Content="Start using Saddlebag" Style="{StaticResource BigButton}" Command="{Binding FinishCommand}" HorizontalAlignment="Left"/>
+        </StackPanel>
+      </StackPanel>
+    </Border>
+  </ScrollViewer>
+</UserControl>

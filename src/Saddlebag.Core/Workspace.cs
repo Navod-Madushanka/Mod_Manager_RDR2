@@ -329,7 +329,7 @@ public sealed class Workspace : IDisposable
     }
 
     /// <summary>lml/ and scripts/ left empty (e.g. after their logs were archived and nothing was deployed). Not in the baseline, so not vanilla.</summary>
-    private void PruneEmptyModFolders()
+    internal void PruneEmptyModFolders()
     {
         var baselineDirs = Store.GetBaseline().SelectMany(b => Enumerable.Range(1, b.Path.Count(c => c == '/'))
             .Select(n => string.Join('/', b.Path.Split('/').Take(n)))).ToHashSet(RelPath.Comparer);
@@ -342,6 +342,64 @@ public sealed class Workspace : IDisposable
             if (!Directory.EnumerateFileSystemEntries(full).Any()) Directory.Delete(full);
         }
     }
+
+    // ---------- launcher ----------
+
+    /// <summary>Which launcher the game came from, for Play and "verify files". Recorded at setup; guessed from the folder otherwise.</summary>
+    public Setup.GameInstall Install
+    {
+        get
+        {
+            var store = Enum.TryParse<Setup.GameStore>(Store.GetSetting("game_store"), out var st) ? st : (Setup.GameStore?)null;
+            return store is { } known
+                ? new Setup.GameInstall(GameDir, known, Store.GetSetting("epic_app_name"))
+                : Setup.GameLocator.Describe(GameDir, new NoProbe());
+        }
+    }
+
+    public void RememberInstall(Setup.GameInstall install)
+    {
+        Store.SetSetting("game_store", install.Store.ToString());
+        if (install.EpicAppName is { } app) Store.SetSetting("epic_app_name", app);
+    }
+
+    /// <summary>A probe that finds nothing, so Describe only classifies the path (no disk-wide search on every call).</summary>
+    private sealed class NoProbe : Setup.IInstallProbe
+    {
+        public string? SteamPath() => null;
+        public string? RockstarInstallFolder() => null;
+        public string EpicManifestsDir() => Path.Combine(Path.GetTempPath(), "saddlebag-no-epic");
+        public IEnumerable<string> FixedDriveRoots() => [];
+    }
+
+    // ---------- one-click fixes ----------
+
+    public sealed record FixResult(int Adopted, string? ModId, int VanillaProblems);
+
+    /// <summary>
+    /// "Fix it" for a red Online check: every untracked file in the game folder becomes one tracked mod (moved into the
+    /// library, nothing deleted), and empty mod folders go. Missing or changed vanilla files can't be fixed here; the
+    /// count says how many still need the launcher's verify.
+    /// </summary>
+    public FixResult TakeOverStrays(string modName = "Found in game folder")
+    {
+        Prepare();
+        var report = Baseline.Verify();
+        var strays = report.Findings.Where(f => f.Kind is FindingKind.Extra or FindingKind.ModSignature && !f.Path.EndsWith('/')).Select(f => f.Path).ToList();
+        string? id = null;
+        if (strays.Count > 0)
+        {
+            var name = modName;
+            for (var i = 2; Store.GetMods().Any(m => m.Name.Equals(name, StringComparison.OrdinalIgnoreCase)); i++) name = $"{modName} ({i})";
+            id = Adopt(strays, name).Import.Mod.Id;
+        }
+        PruneEmptyModFolders();
+        var vanilla = report.Findings.Count(f => f.Kind is FindingKind.Missing or FindingKind.Changed);
+        return new FixResult(strays.Count, id, vanilla);
+    }
+
+    /// <summary>Mod files already in the game folder before Saddlebag managed it (used by setup, before any baseline).</summary>
+    public List<string> FindExistingMods() => Baseline.FindSignatures();
 
     /// <summary>Puts a settings file in Documents back to its baseline copy. Only while the game is closed, since it rewrites them on exit.</summary>
     public string? RestoreSettings(string display)

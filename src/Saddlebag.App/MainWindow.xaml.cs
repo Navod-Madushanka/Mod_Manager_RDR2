@@ -21,4 +21,18 @@ public partial class MainWindow : Window
         _timer.Start();
         Closed += (_, _) => _timer.Stop();
     }
+
+    private void Window_DragOver(object sender, DragEventArgs e)
+    {
+        var ok = e.Data.GetDataPresent(DataFormats.FileDrop) && DataContext is ShellViewModel { NeedsSetup: false };
+        e.Effects = ok ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    /// <summary>Dropping mod downloads anywhere adds them the friendly way (plain questions, applied straight away).</summary>
+    private async void Window_Drop(object sender, DragEventArgs e)
+    {
+        if (e.Data.GetData(DataFormats.FileDrop) is string[] paths && DataContext is ShellViewModel { NeedsSetup: false } shell)
+            await shell.Home.AddAsync(paths);
+    }
 }

@@ -12,6 +12,12 @@ public interface IDialogs
     Task<string?> PickFolderAsync(string title);
     Task<string[]?> PickFilesAsync(string title);
     void ShowError(string title, string message);
+    /// <summary>Asks to pick one of several options (radio buttons). Returns the index, or null when cancelled.</summary>
+    Task<int?> ChooseAsync(string title, string message, IReadOnlyList<string> options, int recommended = 0);
+    /// <summary>Opens a web page, a launcher link (steam://…) or a program.</summary>
+    void Open(string uriOrPath);
+    /// <summary>Restarts Saddlebag with administrator rights (Windows asks first). False if you said no.</summary>
+    bool RestartAsAdministrator();
 }
 
 /// <summary>

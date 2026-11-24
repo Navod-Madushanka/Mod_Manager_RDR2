@@ -16,20 +16,34 @@ public sealed class InitCommand : Command<InitCommand.Settings>
     public sealed class Settings : HomeSettings
     {
         [CommandOption("--game <DIR>")]
-        [Description("Folder that holds RDR2.exe.")]
-        public string Game { get; set; } = "";
+        [Description("Folder that holds RDR2.exe. Found automatically (Steam, Epic, Rockstar) when left out.")]
+        public string? Game { get; set; }
     }
 
     public override int Execute(CommandContext context, Settings s, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(s.Game)) throw new InvalidOperationException("Pass --game <folder that holds RDR2.exe>.");
-        var home = s.Home ?? throw new InvalidOperationException("Pass --home <folder>, on the same drive as the game so hard links work (e.g. D:\\Saddlebag).");
-        using var ws = Workspace.Init(home, s.Game);
+        Saddlebag.Core.Setup.GameInstall install;
+        if (!string.IsNullOrWhiteSpace(s.Game)) install = Saddlebag.Core.Setup.GameLocator.Describe(s.Game);
+        else
+        {
+            var found = Saddlebag.Core.Setup.GameLocator.FindAll();
+            if (found.Count == 0) throw new InvalidOperationException("Couldn't find Red Dead Redemption 2. Pass --game <folder that holds RDR2.exe>.");
+            if (found.Count > 1)
+                throw new InvalidOperationException("Found more than one copy; pick one with --game:\n  " + string.Join("\n  ", found.Select(f => $"{f.Folder} ({f.StoreName})")));
+            install = found[0];
+            AnsiConsole.MarkupLine($"Found the game ({Markup.Escape(install.StoreName)}): [bold]{Markup.Escape(install.Folder)}[/]");
+        }
+        var home = s.Home ?? Saddlebag.Core.Setup.GameLocator.SuggestHome(install.Folder);
+        using var ws = Workspace.Init(home, install.Folder);
+        ws.RememberInstall(install);
         Ctx.RememberHome(ws.Home);
-        AnsiConsole.MarkupLine($"Game: [bold]{Markup.Escape(ws.GameDir)}[/]\nHome: [bold]{Markup.Escape(ws.Home)}[/]");
+        AnsiConsole.MarkupLine($"Game: [bold]{Markup.Escape(ws.GameDir)}[/]\nSaddlebag folder: [bold]{Markup.Escape(ws.Home)}[/]");
         if (ws.HardLinksWork()) AnsiConsole.MarkupLine("[green]Hard links work:[/] mods are stored once and cost no extra disk.");
         else AnsiConsole.MarkupLine("[yellow]Hard links don't work here[/] (different drive, or no write access to the game folder). Files will be copied instead.");
-        AnsiConsole.MarkupLine("\nNext: move any mods out of the game folder, run your launcher's [bold]verify files[/], then [bold]saddlebag baseline capture[/].");
+        var existing = ws.FindExistingMods();
+        AnsiConsole.MarkupLine(existing.Count > 0
+            ? $"\nFound {existing.Count} mod file(s) already in the game folder. Next: [bold]saddlebag adopt <paths> --name \"Mods I already had\"[/], then your launcher's [bold]verify files[/] ({Markup.Escape(install.VerifyHelp)}), then [bold]saddlebag baseline capture[/]."
+            : $"\nNext: your launcher's [bold]verify files[/] ({Markup.Escape(install.VerifyHelp)}), then [bold]saddlebag baseline capture[/].");
         return ExitCodes.Ok;
     }
 }

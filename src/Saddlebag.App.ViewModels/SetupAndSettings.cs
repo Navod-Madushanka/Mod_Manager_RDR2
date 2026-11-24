@@ -6,47 +6,6 @@ using Saddlebag.Core.State;
 
 namespace Saddlebag.App.ViewModels;
 
-/// <summary>First run: pick the game folder and a Saddlebag folder on the same drive.</summary>
-public sealed partial class SetupViewModel(ShellViewModel shell) : PageViewModel(shell)
-{
-    [ObservableProperty] private string _gameDir = "";
-    [ObservableProperty] private string _homeDir = "";
-    [ObservableProperty] private string? _result;
-
-    partial void OnGameDirChanged(string value)
-    {
-        // Suggest a library on the game's drive, so hard links work.
-        if (string.IsNullOrWhiteSpace(HomeDir) && Path.GetPathRoot(value) is { Length: > 0 } root)
-            HomeDir = Path.Combine(root, "Saddlebag");
-    }
-
-    [RelayCommand]
-    private async Task PickGameAsync()
-    {
-        if (await Dialogs.PickFolderAsync("The folder that holds RDR2.exe") is { } d) GameDir = d;
-    }
-
-    [RelayCommand]
-    private async Task PickHomeAsync()
-    {
-        if (await Dialogs.PickFolderAsync("Where Saddlebag keeps mods and backups (same drive as the game)") is { } d) HomeDir = d;
-    }
-
-    [RelayCommand]
-    private Task InitAsync() => Guard(async () =>
-    {
-        var ws = await Task.Run(() => Workspace.Init(HomeDir, GameDir, Shell.Guard));
-        if (Shell.DocumentsDir is { } docs) ws.Store.SetSetting(Core.Baseline.ExternalSettings.DocumentsOverrideKey, docs);
-        Shell.RememberHome(ws.Home);
-        var links = await Task.Run(ws.HardLinksWork);
-        Result = links
-            ? "Hard links work: mods are stored once and cost no extra disk."
-            : "Hard links don't work here (different drive, or no write access to the game folder). Files will be copied instead.";
-        await Shell.OnSetupCompleteAsync(ws);
-        Shell.StatusText = "Set up. Next: move any mods out of the game folder, verify files in your launcher, then capture the baseline on the Settings page.";
-    });
-}
-
 public sealed record PathRuleRow(string Path, string Rule);
 
 /// <summary>Baseline, allowed extras and expected changes, and where things live.</summary>

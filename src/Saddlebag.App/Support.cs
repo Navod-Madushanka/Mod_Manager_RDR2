@@ -38,7 +38,75 @@ public sealed class WpfDialogs(Window owner) : IDialogs
     public void ShowError(string title, string message) =>
         MessageBox.Show(owner, message, title, MessageBoxButton.OK, MessageBoxImage.Warning);
 
+    public Task<int?> ChooseAsync(string title, string message, IReadOnlyList<string> options, int recommended = 0) =>
+        Task.FromResult(ChooseWindow.Ask(owner, title, message, options, recommended));
+
+    public void Open(string uriOrPath)
+    {
+        try { OpenUrl(uriOrPath); }
+        catch (Exception e) { ShowError("Couldn't open it", $"{uriOrPath}\n\n{e.Message}"); }
+    }
+
+    /// <summary>Starts a second copy elevated (Windows shows its permission prompt), then closes this one.</summary>
+    public bool RestartAsAdministrator()
+    {
+        try
+        {
+            var args = Environment.GetCommandLineArgs().Skip(1).Select(a => a.Contains(' ') ? $"\"{a}\"" : a);
+            Process.Start(new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = true, Verb = "runas", Arguments = string.Join(' ', args) });
+            Application.Current.Shutdown();
+            return true;
+        }
+        catch (System.ComponentModel.Win32Exception) { return false; } // you clicked No
+    }
+
     public static void OpenUrl(string url) => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+}
+
+/// <summary>A question with a few answers as radio buttons; the recommended one is preselected.</summary>
+public sealed class ChooseWindow : Window
+{
+    private readonly List<RadioButton> _options = [];
+
+    private ChooseWindow(string title, string message, IReadOnlyList<string> options, int recommended)
+    {
+        Title = title;
+        SizeToContent = SizeToContent.WidthAndHeight;
+        ResizeMode = ResizeMode.NoResize;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        var panel = new StackPanel { Margin = new Thickness(20), MaxWidth = 480 };
+        panel.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12), FontSize = 13 });
+        for (var i = 0; i < options.Count; i++)
+        {
+            var rb = new RadioButton { Content = options[i], IsChecked = i == recommended, Margin = new Thickness(0, 4, 0, 4), FontSize = 13, GroupName = "choice" };
+            _options.Add(rb);
+            panel.Children.Add(rb);
+        }
+        var ok = new Button { Content = "OK", IsDefault = true, Padding = new Thickness(16, 5, 16, 5), Margin = new Thickness(0, 0, 8, 0) };
+        var cancel = new Button { Content = "Cancel", IsCancel = true, Padding = new Thickness(16, 5, 16, 5) };
+        ok.Click += (_, _) => DialogResult = true;
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
+        buttons.Children.Add(ok);
+        buttons.Children.Add(cancel);
+        panel.Children.Add(buttons);
+        Content = panel;
+    }
+
+    public static int? Ask(Window owner, string title, string message, IReadOnlyList<string> options, int recommended)
+    {
+        var w = new ChooseWindow(title, message, options, recommended) { Owner = owner };
+        if (w.ShowDialog() != true) return null;
+        var picked = w._options.FindIndex(o => o.IsChecked == true);
+        return picked >= 0 ? picked : null;
+    }
+}
+
+/// <summary>Visible when an enum value's name equals the parameter (one wizard step at a time).</summary>
+public sealed class StepToVisibilityConverter : IValueConverter
+{
+    public object Convert(object? value, Type t, object? p, CultureInfo c) =>
+        string.Equals(value?.ToString(), p as string, StringComparison.Ordinal) ? Visibility.Visible : Visibility.Collapsed;
+    public object ConvertBack(object value, Type t, object p, CultureInfo c) => throw new NotSupportedException();
 }
 
 /// <summary>One-line text prompt; a PasswordBox when the value is secret (API keys).</summary>
@@ -129,9 +197,10 @@ public sealed class LevelBrushConverter : IValueConverter
             or Core.Nexus.UpdateStatus.UpdateAvailable or Core.Nexus.UpdateStatus.OldFile => Warn,
         Core.Baseline.VerifyStatus.Red or Core.Deploy.Severity.Block or Core.Logs.LogLevel.Error or Core.Routing.Confidence.Low
             or Core.Nexus.UpdateStatus.Error or Core.Nexus.UpdateStatus.Unavailable => Bad,
-        "red" => Bad,
-        "amber" => Warn,
-        "info" => Neutral,
+        "red" or "bad" => Bad,
+        "amber" or "warn" => Warn,
+        "good" => Good,
+        "info" or "neutral" => Neutral,
         Core.Logs.LogLevel.Info => Normal,
         _ => Neutral,
     };

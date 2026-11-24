@@ -17,6 +17,7 @@ public partial class ModsPage : UserControl
     /// <summary>Dropped archives and folders go into the library; nothing touches the game folder until Deploy.</summary>
     private async void DropZone_Drop(object sender, DragEventArgs e)
     {
+        e.Handled = true; // don't also let the window import it
         if (e.Data.GetData(DataFormats.FileDrop) is string[] paths && DataContext is ModsViewModel vm)
             await vm.ImportAsync(paths);
     }

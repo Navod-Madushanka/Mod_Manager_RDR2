@@ -1,0 +1,84 @@
+<UserControl x:Class="Saddlebag.App.Views.HomePage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="20,16" MaxWidth="860">
+
+      <!-- Are mods on or off, and the one button that switches -->
+      <Border Style="{StaticResource Card}" BorderThickness="0,0,0,0" Background="{StaticResource Panel}">
+        <Border BorderThickness="5,0,0,0" BorderBrush="{Binding StatusLevel, Converter={StaticResource LevelBrush}}" Padding="16,4,0,4">
+          <StackPanel>
+            <TextBlock Text="{Binding StatusTitle}" FontSize="22" FontWeight="SemiBold" Foreground="{Binding StatusLevel, Converter={StaticResource LevelBrush}}"/>
+            <TextBlock Text="{Binding StatusDetail}" TextWrapping="Wrap" Margin="0,4,0,14" FontSize="13"/>
+            <StackPanel Orientation="Horizontal">
+              <Button Content="{Binding PrimaryActionText}" Style="{StaticResource BigButton}" Command="{Binding PrimaryCommand}" ToolTip="{Binding PrimaryActionHint}"/>
+              <Button Content="▶  Play" FontSize="15" Padding="22,10" Command="{Binding PlayCommand}" Margin="12,0,0,0"/>
+            </StackPanel>
+            <TextBlock Text="{Binding PrimaryActionHint}" Style="{StaticResource Hint}" Margin="0,8,0,0"/>
+          </StackPanel>
+        </Border>
+      </Border>
+
+      <Border Style="{StaticResource Banner}" Background="#DDF4FF" BorderBrush="#54AEFF" Margin="0,10,0,0"
+              Visibility="{Binding Message, Converter={StaticResource NullToVis}}">
+        <TextBlock Text="{Binding Message}" TextWrapping="Wrap"/>
+      </Border>
+
+      <!-- Things to fix, each with one button -->
+      <ItemsControl ItemsSource="{Binding Problems}" Margin="0,12,0,0">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Border BorderThickness="4,0,0,0" BorderBrush="{Binding Level, Converter={StaticResource LevelBrush}}" Background="{StaticResource Panel}"
+                    Padding="12,8" Margin="0,0,0,6">
+              <DockPanel>
+                <Button DockPanel.Dock="Right" Content="{Binding ActionText}" Margin="12,0,0,0" VerticalAlignment="Center"
+                        Visibility="{Binding ActionText, Converter={StaticResource NullToVis}}"
+                        Command="{Binding DataContext.FixCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"/>
+                <TextBlock Text="{Binding Text}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+              </DockPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+      <Button Content="Check again" Command="{Binding CheckAgainCommand}" HorizontalAlignment="Left" Margin="0,4,0,0"
+              Visibility="{Binding ModsOn, Converter={StaticResource InverseBoolToVis}}"/>
+
+      <!-- The mods -->
+      <DockPanel Margin="0,22,0,8">
+        <Button DockPanel.Dock="Right" Content="+ Add mods…" Style="{StaticResource PrimaryButton}" Command="{Binding AddModsCommand}" Margin="0"/>
+        <StackPanel>
+          <TextBlock Text="Your mods" Style="{StaticResource H1}" Margin="0"/>
+          <TextBlock Style="{StaticResource Hint}" Text="Tick to turn a mod on, untick to turn it off. Changes apply right away. You can also drop downloads (.zip, .7z, .rar) anywhere on this window."/>
+        </StackPanel>
+      </DockPanel>
+
+      <Border BorderBrush="{StaticResource Line}" BorderThickness="2" CornerRadius="6" Padding="24" Background="{StaticResource Panel}"
+              Visibility="{Binding Mods.Count, Converter={StaticResource CountToVis}, ConverterParameter=invert}">
+        <StackPanel HorizontalAlignment="Center">
+          <TextBlock Text="No mods yet" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+          <TextBlock Style="{StaticResource Hint}" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,6,0,0"
+                     Text="Download a mod (for example from Nexus Mods), then drop the file here or click &quot;Add mods&quot;. Many mods also need Script Hook RDR2; Saddlebag tells you when."/>
+        </StackPanel>
+      </Border>
+
+      <ItemsControl ItemsSource="{Binding Mods}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Border BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="4,8">
+              <DockPanel>
+                <Button DockPanel.Dock="Right" Content="Remove" Style="{StaticResource LinkButton}" VerticalAlignment="Center"
+                        Command="{Binding DataContext.RemoveModCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"/>
+                <CheckBox IsChecked="{Binding Enabled, Mode=OneWay}" VerticalAlignment="Center" Margin="0,0,10,0"
+                          Command="{Binding DataContext.ToggleModCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"/>
+                <StackPanel VerticalAlignment="Center">
+                  <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold"/>
+                  <TextBlock Text="{Binding Detail}" Foreground="{StaticResource Muted}" Visibility="{Binding Detail, Converter={StaticResource NullToVis}}"/>
+                </StackPanel>
+              </DockPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

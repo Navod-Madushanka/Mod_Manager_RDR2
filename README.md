@@ -4,6 +4,20 @@ An RDR2 mod manager whose headline is a **verified Online mode**. Mods live in a
 
 Green means "the folder matches your baseline". It never means "safe from bans".
 
+## For players
+
+Download the latest build (see [Build](#build)), unzip it, and double-click `Saddlebag.exe`. Nothing to install.
+
+1. **Setup finds your game** in Steam, Epic or the Rockstar Games Launcher. If you already have mods, Saddlebag takes them over (nothing is deleted). Your launcher checks the game files once (Steam opens by itself), and Saddlebag takes a snapshot of the clean game.
+2. **Add mods** by dropping their `.zip`, `.7z` or `.rar` onto the window, or with **Add mods**. If a mod comes in several versions, or has files Saddlebag can't place, it asks a plain question with a safe default.
+3. **Tick or untick** a mod to turn it on or off. Changes apply straight away.
+4. **Before Online**, press **Get ready for Online**. "Ready for Online" means the game folder matches the clean snapshot. If something's left over, one button cleans it up (keeping it as a mod) or opens your launcher's repair.
+5. **Back to Story**: **Turn mods back on**. **Play** starts the game through your launcher.
+
+When a mod needs Script Hook RDR2, Lenny's Mod Loader or ScriptHookRDR2 .NET, Saddlebag says so and links the download page.
+
+Tick **Advanced** (top right) for every other tool: profiles, the routing table, the crash finder, logs, the dev-build watcher, Nexus updates and settings. Everything below describes those tools and the command-line version.
+
 ## Layout
 
 ```text

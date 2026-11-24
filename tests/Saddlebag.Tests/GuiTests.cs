@@ -21,6 +21,29 @@ public sealed class FakeDialogs : IDialogs
     public Task<string?> PickFolderAsync(string title) => Task.FromResult(Folders.Count > 0 ? Folders.Dequeue() : null);
     public Task<string[]?> PickFilesAsync(string title) => Task.FromResult(Files.Count > 0 ? Files.Dequeue() : null);
     public void ShowError(string title, string message) => Errors.Add((title, message));
+
+    public Queue<int?> Choices { get; } = new();
+    public List<(string Title, IReadOnlyList<string> Options)> Asked { get; } = [];
+    public List<string> Opened { get; } = [];
+    public bool RestartAccepted { get; set; }
+    public int Restarts { get; private set; }
+
+    public Task<int?> ChooseAsync(string title, string message, IReadOnlyList<string> options, int recommended = 0)
+    {
+        Asked.Add((title, options));
+        return Task.FromResult(Choices.Count > 0 ? Choices.Dequeue() : recommended);
+    }
+    public void Open(string uriOrPath) => Opened.Add(uriOrPath);
+    public bool RestartAsAdministrator() { Restarts++; return RestartAccepted; }
+}
+
+/// <summary>An install probe that finds nothing, so setup tests never scan the real disk or registry.</summary>
+public sealed class NoInstalls : Saddlebag.Core.Setup.IInstallProbe
+{
+    public string? SteamPath() => null;
+    public string? RockstarInstallFolder() => null;
+    public string EpicManifestsDir() => Path.Combine(Path.GetTempPath(), "saddlebag-tests-no-epic");
+    public IEnumerable<string> FixedDriveRoots() => [];
 }
 
 /// <summary>The GUI's behaviour, driven through its view models exactly as the buttons would.</summary>
@@ -31,7 +54,7 @@ public class GuiTests : IDisposable
     private readonly FakeDialogs _dialogs = new();
     private readonly ShellViewModel _shell;
 
-    public GuiTests() => _shell = new ShellViewModel(_dialogs, _sb.Guard) { RememberHome = _ => { }, DocumentsDir = _sb.Documents };
+    public GuiTests() => _shell = new ShellViewModel(_dialogs, _sb.Guard) { RememberHome = _ => { }, DocumentsDir = _sb.Documents, InstallProbe = new NoInstalls() };
 
     public void Dispose()
     {
@@ -41,19 +64,24 @@ public class GuiTests : IDisposable
 
     private void NoErrors() => Assert.True(_dialogs.Errors.Count == 0, string.Join("; ", _dialogs.Errors.Select(e => e.Message)));
 
-    private async Task SetUpAsync()
+    /// <summary>Runs the first-run wizard for a never-modded game: pick the folder, verify, snapshot, done.</summary>
+    private Task SetUpAsync() => WizardAsync(_shell, _dialogs, _sb);
+
+    internal static async Task WizardAsync(ShellViewModel shell, FakeDialogs dialogs, Sandbox sb)
     {
-        await _shell.StartAsync(_sb.Home);
-        Assert.True(_shell.NeedsSetup);
-        _dialogs.Folders.Enqueue(_sb.Game);
-        await _shell.Setup.PickGameCommand.ExecuteAsync(null);
-        _shell.Setup.HomeDir = _sb.Home;
-        await _shell.Setup.InitCommand.ExecuteAsync(null);
-        Assert.False(_shell.NeedsSetup);
-        Assert.NotNull(_shell.BaselineBanner);
-        await _shell.Settings.CaptureBaselineCommand.ExecuteAsync(null);
-        Assert.Null(_shell.BaselineBanner);
-        NoErrors();
+        await shell.StartAsync(sb.Home);
+        Assert.True(shell.NeedsSetup);
+        dialogs.Folders.Enqueue(sb.Game);
+        await shell.Wizard.BrowseCommand.ExecuteAsync(null);
+        shell.Wizard.HomeDir = sb.Home;
+        await shell.Wizard.UseThisGameCommand.ExecuteAsync(null);
+        Assert.Equal(WizardStep.Verify, shell.Wizard.Step);
+        await shell.Wizard.VerifiedCommand.ExecuteAsync(null);
+        Assert.Equal(WizardStep.Done, shell.Wizard.Step);
+        await shell.Wizard.FinishCommand.ExecuteAsync(null);
+        Assert.False(shell.NeedsSetup);
+        Assert.Null(shell.BaselineBanner);
+        Assert.True(dialogs.Errors.Count == 0, string.Join("; ", dialogs.Errors.Select(e => e.Message)));
     }
 
     private string Hooks() => _sb.Zip("hooks", ("ScriptHookRDR2.dll", "h"), ("dinput8.dll", "l"), ("ScriptHookRDRDotNet.asi", "d"),
@@ -63,7 +91,7 @@ public class GuiTests : IDisposable
     public async Task Setup_import_deploy_online_story_round_trip()
     {
         await SetUpAsync();
-        Assert.Equal(1, _shell.Settings.Progress);
+        Assert.Equal(1, _shell.Wizard.Progress);
 
         _dialogs.Files.Enqueue([Hooks(), _sb.Zip("trainer", ("Trainer.asi", "t"), ("Trainer.ini", "i"))]);
         await _shell.Mods.ImportFilesCommand.ExecuteAsync(null);
@@ -94,7 +122,7 @@ public class GuiTests : IDisposable
     public async Task Starting_again_opens_the_existing_folder()
     {
         await SetUpAsync();
-        using var second = new ShellViewModel(new FakeDialogs(), _sb.Guard) { RememberHome = _ => { } };
+        using var second = new ShellViewModel(new FakeDialogs(), _sb.Guard) { RememberHome = _ => { }, InstallProbe = new NoInstalls() };
         _shell.Host.Dispose(); // one process at a time on state.db in this test
         await second.StartAsync(_sb.Home);
         Assert.False(second.NeedsSetup);
@@ -286,12 +314,8 @@ public class GuiTests : IDisposable
         var fake = new FakeNexus();
         fake.Mod(1234, "1.1");
         fake.Files(1234, $"[{FakeNexus.File(10, 1, "1.0", "Trainer-1234-1-0-1700000000.zip", 1700000000)}]");
-        using var shell = new ShellViewModel(_dialogs, _sb.Guard) { RememberHome = _ => { }, NexusHandler = fake, DocumentsDir = _sb.Documents };
-        await shell.StartAsync(_sb.Home);
-        _dialogs.Folders.Enqueue(_sb.Game);
-        await shell.Setup.PickGameCommand.ExecuteAsync(null);
-        shell.Setup.HomeDir = _sb.Home;
-        await shell.Setup.InitCommand.ExecuteAsync(null);
+        using var shell = new ShellViewModel(_dialogs, _sb.Guard) { RememberHome = _ => { }, NexusHandler = fake, DocumentsDir = _sb.Documents, InstallProbe = new NoInstalls() };
+        await WizardAsync(shell, _dialogs, _sb);
         await shell.Mods.ImportAsync([_sb.Zip("Trainer-1234-1-0-1700000000", ("Trainer.asi", "t"))]);
 
         await shell.Updates.CheckCommand.ExecuteAsync(null);
