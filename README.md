@@ -103,6 +103,7 @@ All logic lives in `Saddlebag.App.ViewModels`, so the GUI's behaviour is tested 
 - **Journal**: each deploy or purge is written to `state.db` as steps before anything moves. Each step's file operation and its ledger update commit together; a crash leaves a pending journal that the next command finishes. Steps are idempotent, so recovery rolls forward. Tests kill the process after every single step and check it recovers.
 - **Never destroy**: a file a mod would overwrite is moved to `backups\` first and restored on purge. If you edited a deployed file (e.g. a mod's `.ini`), purge keeps your version in the library.
 - **Baseline, not whitelist**: verify walks the whole tree, so files added inside vanilla folders are caught, not just root files.
+- **Game settings in Documents**: the baseline also keeps a copy of `Documents\Rockstar Games\Red Dead Redemption 2\Settings\system.xml` (or the same file without `Settings\`), which a VR mod can rewrite. Verify reports a change as `SettingsChanged`, information only: it never turns Online red, because changing graphics settings in game changes it too. `saddlebag restore-settings <path>` (or Restore on the Online page) puts the baseline copy back, saving the current one under `rescued\` first.
 
 ## Routing
 
@@ -229,7 +230,6 @@ Not done yet:
 
 - Rules live in `Router.cs`, not `rules.json`.
 - Rule 7's "files with a known game path" isn't implemented (needs a game-path index).
-- `Documents\Rockstar Games\Red Dead Redemption 2\system.xml` isn't in the baseline yet.
 - The Windows paths (`CreateHardLinkW`, case-insensitive NTFS, launcher process names, PE file versions of real hook DLLs) need a run on the real install.
 
 Open questions from the plan still to settle: LML Mod Manager's load-order storage (and whether a newly deployed package needs an entry there), the V2 .NET API assembly name (rule 5 matches any `ScriptHookRDR*` reference, so either name works), and which store your install is from.

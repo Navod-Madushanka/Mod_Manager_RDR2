@@ -1048,3 +1048,20 @@ public sealed class UpdatesCommand : Command<UpdatesCommand.Settings>
         return updates.Count > 0 ? ExitCodes.Amber : ExitCodes.Ok;
     }
 }
+
+public sealed class RestoreSettingsCommand : Command<RestoreSettingsCommand.Settings>
+{
+    public sealed class Settings : HomeSettings
+    {
+        [CommandArgument(0, "<PATH>")] [Description("As verify shows it, e.g. \"Documents/Rockstar Games/Red Dead Redemption 2/Settings/system.xml\"")]
+        public string Path { get; set; } = "";
+    }
+
+    public override int Execute(CommandContext context, Settings s, CancellationToken ct)
+    {
+        using var ws = Ctx.Open(s);
+        var saved = ws.RestoreSettings(s.Path);
+        AnsiConsole.MarkupLine("[green]Restored[/] the baseline copy." + (saved is null ? "" : $" The previous file is saved at {Markup.Escape(saved)}."));
+        return ExitCodes.Ok;
+    }
+}

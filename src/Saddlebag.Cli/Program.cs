@@ -73,6 +73,7 @@ app.Configure(c =>
         b.AddCommand<NexusUnlinkCommand>("unlink").WithDescription("Remove a mod's Nexus link.");
     });
     c.AddCommand<UpdatesCommand>("updates").WithDescription("Check linked mods for newer files on Nexus. Read-only; exit code 1 when updates exist.");
+    c.AddCommand<RestoreSettingsCommand>("restore-settings").WithDescription("Put a game settings file in Documents (e.g. system.xml) back to its baseline copy.");
     c.AddCommand<AllowCommand>("allow").WithDescription("Allow an extra file in Online mode (shows amber), e.g. x64/data/startup.meta.");
     c.AddCommand<ExpectCommand>("expect").WithDescription("Mark a vanilla file the launcher rewrites (e.g. a DLSS DLL) as expected to change.");
 

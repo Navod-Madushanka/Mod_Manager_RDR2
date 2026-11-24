@@ -32,7 +32,7 @@ public sealed class Workspace : IDisposable
         Store = store;
         Guard = guard;
         Library = new ModLibrary(store, home, new Router());
-        Baseline = new BaselineService(store, gameDir);
+        Baseline = new BaselineService(store, gameDir, home);
         Deployer = new Deployer(store, Library, home, gameDir);
         Logs = new Logs.LogService(store, gameDir, home);
     }
@@ -321,6 +321,13 @@ public sealed class Workspace : IDisposable
                 if (!Directory.EnumerateFileSystemEntries(d).Any()) Directory.Delete(d);
             if (!Directory.EnumerateFileSystemEntries(full).Any()) Directory.Delete(full);
         }
+    }
+
+    /// <summary>Puts a settings file in Documents back to its baseline copy. Only while the game is closed, since it rewrites them on exit.</summary>
+    public string? RestoreSettings(string display)
+    {
+        Guard.ThrowIfRunning();
+        return (Baseline.External ?? throw new InvalidOperationException("No settings snapshot.")).Restore(display);
     }
 
     public void CaptureBaseline(bool force, IProgress<(int, int, string)>? progress = null)

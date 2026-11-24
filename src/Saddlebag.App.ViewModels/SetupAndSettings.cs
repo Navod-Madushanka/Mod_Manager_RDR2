@@ -36,6 +36,7 @@ public sealed partial class SetupViewModel(ShellViewModel shell) : PageViewModel
     private Task InitAsync() => Guard(async () =>
     {
         var ws = await Task.Run(() => Workspace.Init(HomeDir, GameDir, Shell.Guard));
+        if (Shell.DocumentsDir is { } docs) ws.Store.SetSetting(Core.Baseline.ExternalSettings.DocumentsOverrideKey, docs);
         Shell.RememberHome(ws.Home);
         var links = await Task.Run(ws.HardLinksWork);
         Result = links

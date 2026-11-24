@@ -16,6 +16,8 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     internal IGameGuard? Guard { get; }
     /// <summary>Records the Saddlebag folder for next start. Replaced in tests so they don't touch AppData.</summary>
     public Action<string> RememberHome { get; init; } = HomeLocator.Remember;
+    /// <summary>Test seam: a stand-in Documents folder for the game's settings files.</summary>
+    public string? DocumentsDir { get; init; }
     /// <summary>Test seam for the Nexus client's HTTP layer.</summary>
     public HttpMessageHandler? NexusHandler { get; init; }
 

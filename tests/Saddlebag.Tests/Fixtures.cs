@@ -19,6 +19,8 @@ public sealed class Sandbox : IDisposable
     public string Game => Path.Combine(Root, "game");
     public string Home => Path.Combine(Root, "home");
     public string Src => Path.Combine(Root, "src");
+    /// <summary>Stands in for the Windows Documents folder, so no test reads or writes the real one.</summary>
+    public string Documents => Path.Combine(Root, "Documents");
     public FakeGuard Guard { get; } = new();
 
     public Sandbox()
@@ -34,7 +36,14 @@ public sealed class Sandbox : IDisposable
         Write(Game, "bink2w64.dll", "vanilla bink");
     }
 
-    public Workspace Init() => Workspace.Init(Home, Game, Guard);
+    public Workspace Init()
+    {
+        var ws = Workspace.Init(Home, Game, Guard);
+        ws.Store.SetSetting(Saddlebag.Core.Baseline.ExternalSettings.DocumentsOverrideKey, Documents);
+        return ws;
+    }
+
+    public string SystemXml => Path.Combine(Documents, "Rockstar Games", "Red Dead Redemption 2", "Settings", "system.xml");
     public Workspace Open() => Workspace.Open(Home, Guard);
 
     public static string Write(string root, string rel, string content)

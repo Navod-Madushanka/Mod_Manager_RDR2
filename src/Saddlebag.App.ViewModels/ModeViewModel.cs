@@ -11,8 +11,14 @@ public sealed partial class FindingRow(Finding f) : ObservableObject
     public FindingKind Kind { get; } = f.Kind;
     public string Path { get; } = f.Path;
     public string Detail { get; } = f.Detail;
-    /// <summary>red for offenders, amber for things you allowed or expect.</summary>
-    public string Severity => Kind is FindingKind.AllowedExtra or FindingKind.ExpectedChange ? "amber" : "red";
+    /// <summary>red for offenders, amber for things you allowed or expect, info for settings files (never affect status).</summary>
+    public string Severity => Kind switch
+    {
+        FindingKind.SettingsChanged => "info",
+        FindingKind.AllowedExtra or FindingKind.ExpectedChange => "amber",
+        _ => "red",
+    };
+    public bool CanRestore => Kind == FindingKind.SettingsChanged;
     public bool CanAdopt => Kind is FindingKind.Extra or FindingKind.ModSignature or FindingKind.Changed && !Path.EndsWith('/');
     public bool CanAllow => Kind is FindingKind.Extra or FindingKind.ModSignature or FindingKind.Changed;
     public bool CanExpect => Kind is FindingKind.Changed;
@@ -76,6 +82,16 @@ public sealed partial class ModeViewModel(ShellViewModel shell) : PageViewModel(
     {
         var r = await Host.Run(ws => ws.Baseline.Verify(Deep), Deep ? "Hashing every file…" : "Checking files…");
         Show(r);
+    });
+
+    /// <summary>Puts a settings file back to its baseline copy; the current one is saved first.</summary>
+    [RelayCommand]
+    private Task RestoreSettingsAsync(FindingRow row) => Guard(async () =>
+    {
+        if (!await Dialogs.ConfirmAsync("Restore settings", $"Put {row.Path} back to the copy taken with the baseline? The current file is saved first.")) return;
+        var saved = await Host.Run(ws => ws.RestoreSettings(row.Path));
+        Shell.StatusText = saved is null ? "Restored." : $"Restored. The previous file is saved at {saved}.";
+        await VerifyAsync();
     });
 
     [RelayCommand]

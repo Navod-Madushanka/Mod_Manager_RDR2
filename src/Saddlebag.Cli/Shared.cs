@@ -117,6 +117,7 @@ public static class Show
                 t.AddRow(f.Kind switch
                 {
                     FindingKind.AllowedExtra or FindingKind.ExpectedChange => $"[yellow]{f.Kind}[/]",
+                    FindingKind.SettingsChanged => $"[blue]{f.Kind}[/]",
                     _ => $"[red]{f.Kind}[/]",
                 }, Markup.Escape(f.Path), Markup.Escape(f.Detail));
             AnsiConsole.Write(t);
@@ -126,6 +127,8 @@ public static class Show
                                     "This proves file state only; it says nothing about bans.[/]").BorderColor(color == "green" ? Spectre.Console.Color.Green : color == "yellow" ? Spectre.Console.Color.Yellow : Spectre.Console.Color.Red));
         if (r.Status == VerifyStatus.Red && r.Findings.Any(f => f.Kind is FindingKind.Extra or FindingKind.ModSignature))
             AnsiConsole.MarkupLine("[grey]Untracked extras aren't removed automatically. Turn them into a tracked mod with `saddlebag adopt <path>... --name <name>`, move them out, or `saddlebag allow <path>` to keep one.[/]");
+        if (r.Findings.Any(f => f.Kind == FindingKind.SettingsChanged))
+            AnsiConsole.MarkupLine("[grey]Settings files are information only. If a mod changed one, `saddlebag restore-settings <path>` puts the baseline copy back.[/]");
         if (r.Findings.Any(f => f.Kind is FindingKind.Missing or FindingKind.Changed))
             AnsiConsole.MarkupLine("[grey]Missing or changed vanilla files: run your launcher's verify. After a game update, re-capture the baseline.[/]");
         return r.Status switch { VerifyStatus.Green => ExitCodes.Ok, VerifyStatus.Amber => ExitCodes.Amber, _ => ExitCodes.Red };

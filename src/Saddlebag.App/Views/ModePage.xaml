@@ -45,6 +45,9 @@
                         Command="{Binding DataContext.AllowCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"/>
                 <Button Content="Expected" Style="{StaticResource RowButton}" Visibility="{Binding CanExpect, Converter={StaticResource BoolToVis}}"
                         Command="{Binding DataContext.ExpectCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"/>
+                <Button Content="Restore" Style="{StaticResource RowButton}" Visibility="{Binding CanRestore, Converter={StaticResource BoolToVis}}"
+                        ToolTip="Put back the copy taken with the baseline"
+                        Command="{Binding DataContext.RestoreSettingsCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"/>
               </StackPanel>
             </DataTemplate>
           </DataGridTemplateColumn.CellTemplate>

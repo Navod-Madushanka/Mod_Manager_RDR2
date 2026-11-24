@@ -79,7 +79,7 @@ public class WorkspaceTests : IDisposable
         for (var crashAt = 0; ; crashAt++)
         {
             using var sb = new Sandbox();
-            using (var ws = Workspace.Init(sb.Home, sb.Game, sb.Guard))
+            using (var ws = sb.Init())
             {
                 ws.CaptureBaseline(false);
                 sb.EnableFrameworks(ws, lml: true);

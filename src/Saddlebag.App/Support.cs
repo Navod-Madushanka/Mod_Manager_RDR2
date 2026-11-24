@@ -131,6 +131,7 @@ public sealed class LevelBrushConverter : IValueConverter
             or Core.Nexus.UpdateStatus.Error or Core.Nexus.UpdateStatus.Unavailable => Bad,
         "red" => Bad,
         "amber" => Warn,
+        "info" => Neutral,
         Core.Logs.LogLevel.Info => Normal,
         _ => Neutral,
     };

@@ -5,7 +5,8 @@ using Saddlebag.Core.Util;
 
 namespace Saddlebag.Core.Baseline;
 
-public enum FindingKind { Missing, Changed, Extra, ModSignature, AllowedExtra, ExpectedChange, Deployed }
+/// <summary>SettingsChanged is information only: it never changes the verify status.</summary>
+public enum FindingKind { Missing, Changed, Extra, ModSignature, AllowedExtra, ExpectedChange, Deployed, SettingsChanged }
 
 public sealed record Finding(FindingKind Kind, string Path, string Detail);
 
@@ -16,8 +17,11 @@ public sealed record VerifyReport(VerifyStatus Status, IReadOnlyList<Finding> Fi
     public IEnumerable<Finding> Offenders => Findings.Where(f => f.Kind is FindingKind.Missing or FindingKind.Changed or FindingKind.Extra or FindingKind.ModSignature or FindingKind.Deployed);
 }
 
-public sealed class BaselineService(StateStore store, string gameDir)
+/// <param name="home">Saddlebag's folder. With it, the game's settings files in Documents are captured and checked too.</param>
+public sealed class BaselineService(StateStore store, string gameDir, string? home = null)
 {
+    public ExternalSettings? External { get; } = home is null ? null : new ExternalSettings(store, home);
+
     /// <summary>Files and folders that only exist when something is modded. Matched against the path's file name or first folder.</summary>
     public static readonly string[] SignatureFiles = ["dinput8.dll", "version.dll", "ScriptHookRDR2.dll", "ScriptHookRDRNetAPI.dll", "vfs.asi", "ScriptHookRDRDotNet.asi"];
     public static readonly string[] SignatureFolders = ["lml", "scripts"];
@@ -63,6 +67,7 @@ public sealed class BaselineService(StateStore store, string gameDir)
         store.ReplaceBaseline(rows, version);
         var exe = Path.Combine(gameDir, "RDR2.exe");
         if (File.Exists(exe)) store.SetSetting("game_exe_sha256", FileOps.Sha256(exe));
+        External?.Capture();
         return rows.Count;
     }
 
@@ -125,6 +130,8 @@ public sealed class BaselineService(StateStore store, string gameDir)
         foreach (var dir in SignatureFolders)
             if (Directory.Exists(Path.Combine(gameDir, dir)) && !baseline.Keys.Any(k => RelPath.IsUnder(k, dir)) && !onDisk.Any(k => RelPath.IsUnder(k, dir)))
                 findings.Add(new(FindingKind.ModSignature, dir + "/", "empty mod folder"));
+
+        if (External is not null) foreach (var f in External.Check(deep)) findings.Add(f);
 
         var list = findings.OrderBy(f => f.Kind).ThenBy(f => f.Path, RelPath.Comparer).ToList();
         var status = list.Any(f => f.Kind is FindingKind.Missing or FindingKind.Changed or FindingKind.Extra or FindingKind.ModSignature or FindingKind.Deployed)

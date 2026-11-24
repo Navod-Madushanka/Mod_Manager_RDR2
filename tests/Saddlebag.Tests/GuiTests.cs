@@ -31,7 +31,7 @@ public class GuiTests : IDisposable
     private readonly FakeDialogs _dialogs = new();
     private readonly ShellViewModel _shell;
 
-    public GuiTests() => _shell = new ShellViewModel(_dialogs, _sb.Guard) { RememberHome = _ => { } };
+    public GuiTests() => _shell = new ShellViewModel(_dialogs, _sb.Guard) { RememberHome = _ => { }, DocumentsDir = _sb.Documents };
 
     public void Dispose()
     {
@@ -286,7 +286,7 @@ public class GuiTests : IDisposable
         var fake = new FakeNexus();
         fake.Mod(1234, "1.1");
         fake.Files(1234, $"[{FakeNexus.File(10, 1, "1.0", "Trainer-1234-1-0-1700000000.zip", 1700000000)}]");
-        using var shell = new ShellViewModel(_dialogs, _sb.Guard) { RememberHome = _ => { }, NexusHandler = fake };
+        using var shell = new ShellViewModel(_dialogs, _sb.Guard) { RememberHome = _ => { }, NexusHandler = fake, DocumentsDir = _sb.Documents };
         await shell.StartAsync(_sb.Home);
         _dialogs.Folders.Enqueue(_sb.Game);
         await shell.Setup.PickGameCommand.ExecuteAsync(null);
@@ -444,5 +444,25 @@ public class GuiTests : IDisposable
         Assert.False(_shell.Plan.PreviewPurge);
         Assert.Equal("vanilla meta", File.ReadAllText(_sb.GameFile("x64/data/vanilla.meta")));
         NoErrors();
+    }
+
+    [Fact]
+    public async Task Changed_game_settings_show_as_information_with_a_restore_button()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(_sb.SystemXml)!);
+        File.WriteAllText(_sb.SystemXml, "flat");
+        await SetUpAsync();
+        File.WriteAllText(_sb.SystemXml, "vr");
+
+        await _shell.Mode.VerifyCommand.ExecuteAsync(null);
+        Assert.Equal(VerifyStatus.Green, _shell.Mode.Status);
+        var row = Assert.Single(_shell.Mode.Findings);
+        Assert.Equal(("info", true, false, false), (row.Severity, row.CanRestore, row.CanAdopt, row.CanAllow));
+
+        await _shell.Mode.RestoreSettingsCommand.ExecuteAsync(row);
+        NoErrors();
+        Assert.Equal("flat", File.ReadAllText(_sb.SystemXml));
+        Assert.Empty(_shell.Mode.Findings);
+        Assert.Contains("saved", _shell.StatusText);
     }
 }
