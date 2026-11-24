@@ -33,6 +33,11 @@
         </DataGrid.Columns>
       </DataGrid>
 
+      <TextBlock Text="Routing rules" Style="{StaticResource H1}" Margin="0,24,0,6"/>
+      <TextBlock Style="{StaticResource Hint}" Text="Loader and hook names, file extensions and each rule's explanation are data. If a mod uses a name Saddlebag doesn't know, export the rules, edit rules.json, and restart."/>
+      <TextBlock Text="{Binding RulesText}" Margin="0,8,0,8"/>
+      <Button Content="Export rules for editing…" Command="{Binding ExportRulesCommand}" HorizontalAlignment="Left"/>
+
       <TextBlock Text="Folders" Style="{StaticResource H1}" Margin="0,24,0,6"/>
       <TextBlock Text="{Binding Paths}" FontFamily="Consolas"/>
     </StackPanel>

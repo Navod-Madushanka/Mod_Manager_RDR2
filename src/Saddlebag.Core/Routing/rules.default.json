@@ -1,0 +1,50 @@
+{
+  "$comment": "Saddlebag's built-in routing data. To change any of it, put a rules.json in your Saddlebag folder with only the keys you want to change (`saddlebag rules export` writes a full copy). Lists replace the built-in list; rule titles and reasons merge by key.",
+
+  "frameworks": ["ScriptHookRDR2.dll", "dinput8.dll", "version.dll", "vfs.asi", "ScriptHookRDRDotNet.asi", "ScriptHookRDRNetAPI.dll"],
+  "asiLoaders": ["dinput8.dll", "version.dll"],
+  "hookFiles": ["ScriptHookRDR2.dll", "vfs.asi", "ScriptHookRDRDotNet.asi"],
+  "dotNetApiReferencePrefixes": ["ScriptHookRDR"],
+  "streamExtensions": [".ytd", ".ydr", ".ydd", ".yft"],
+  "dataExtensions": [".ymt", ".meta", ".xml", ".dat"],
+  "docExtensions": [".txt", ".md", ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".url", ".html", ".htm", ".rtf", ".docx"],
+  "structuralFolders": ["lml", "scripts", "replace", "stream"],
+  "signatureFiles": ["dinput8.dll", "version.dll", "ScriptHookRDR2.dll", "ScriptHookRDRNetAPI.dll", "vfs.asi", "ScriptHookRDRDotNet.asi"],
+  "signatureFolders": ["lml", "scripts"],
+
+  "rules": {
+    "1": "Pre-structured archive (top-level lml/ or scripts/)",
+    "2": "LML package (install.xml)",
+    "3": "Framework (loader or hook)",
+    "4": "ASI plugin",
+    "5": ".NET script",
+    "6": "LML stream asset",
+    "7": "LML replace",
+    "8": "Data file",
+    "9": "Variants",
+    "10": "Docs",
+    "11": "Unknown",
+    "override": "Your saved answer",
+    "lml-pack": "LML packaging (generated install.xml)",
+    "root": "Outside the package root"
+  },
+
+  "reasons": {
+    "prestructured": "pre-structured archive: mapped 1:1 onto the game root",
+    "lml-package": "install.xml at the package root: the folder goes to lml/ intact",
+    "framework": "known loader or hook: root, tracked as a shared component",
+    "asi": "ASI plugin: game root",
+    "asi-sibling": "sits beside an .asi: goes to root with it",
+    "dotnet-script": "managed DLL that references the RDR2 .NET API: scripts/",
+    "dotnet-sibling": "beside a .NET script: scripts/ with it",
+    "stream": "loose streaming asset: LML streams it by file name",
+    "replace": "inside a replace/ folder: mirrors the game path under lml/replace/",
+    "data": "data file with no install.xml or game path: tell me where it goes",
+    "docs": "documentation: not deployed",
+    "unknown": "no rule matches",
+    "outside-root": "outside the package root",
+    "other-variant": "belongs to another variant",
+    "override": "your saved answer",
+    "override-skip": "you chose to skip this file"
+  }
+}

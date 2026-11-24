@@ -35,8 +35,9 @@ public sealed class DeployException(string message) : Exception(message);
 /// Makes the game folder match the enabled mods. Plan → journal → apply → record, one step at a time:
 /// a crash mid-way leaves a pending journal that <see cref="Recover"/> finishes on the next run.
 /// </summary>
-public sealed class Deployer(StateStore store, ModLibrary library, string home, string gameDir)
+public sealed class Deployer(StateStore store, ModLibrary library, string home, string gameDir, RuleSet? rules = null)
 {
+    private readonly RuleSet _rules = rules ?? RuleSet.Default;
     private static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
     /// <summary>Test hook: runs after a step's file operation and before its ledger commit, to simulate a crash.</summary>
@@ -90,13 +91,13 @@ public sealed class Deployer(StateStore store, ModLibrary library, string home, 
                         mod.IsLinked || ModLibrary.IsGenerated(f.LibraryPath), pm.Priority)));
             }
 
-            var (winners, resolveFindings) = DeployChecks.Resolve(candidates);
+            var (winners, resolveFindings) = DeployChecks.Resolve(candidates, _rules);
             desired = winners;
             checks.AddRange(resolveFindings);
             var deployedNow = store.GetDeployed().Select(d => d.DestPath).ToHashSet(RelPath.Comparer);
-            var untracked = Router.Frameworks.Where(f => !deployedNow.Contains(f) && File.Exists(GamePath(f))).ToHashSet(RelPath.Comparer);
+            var untracked = _rules.Frameworks.Where(f => !deployedNow.Contains(f) && File.Exists(GamePath(f))).ToHashSet(RelPath.Comparer);
             var gameUpdated = new Baseline.BaselineService(store, gameDir).GameUpdatedSinceBaseline();
-            checks.AddRange(DeployChecks.Layout(winners, untracked, gameUpdated));
+            checks.AddRange(DeployChecks.Layout(winners, untracked, gameUpdated, _rules));
             if (!ignoreBlockingChecks)
                 blockers.AddRange(checks.Where(c => c.Severity == Severity.Block).Select(c => c.Message + (c.Hint is null ? "" : " " + c.Hint)));
         }

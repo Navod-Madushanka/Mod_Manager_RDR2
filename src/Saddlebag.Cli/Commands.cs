@@ -49,6 +49,7 @@ public sealed class StatusCommand : Command<HomeSettings>
         grid.AddRow("Baseline", at is null ? "[red]none: run `saddlebag baseline capture`[/]" : $"{ws.Store.BaselineCount()} files, {at:yyyy-MM-dd HH:mm} UTC, game {Markup.Escape(version ?? "?")}");
         grid.AddRow("Mods", $"{mods.Count} in library, {enabled} enabled");
         grid.AddRow("Deployed", $"{ws.Store.GetDeployed().Count} files, {ws.Store.GetBackups().Count} originals backed up");
+        grid.AddRow("Rules", Markup.Escape(ws.Rules.Source == "built-in" ? "built-in" : "your file: " + ws.Rules.Source));
         grid.AddRow("Profile", Markup.Escape(ws.Store.FindProfile(ws.Store.ActiveProfile)?.Name ?? ws.Store.ActiveProfile));
         AnsiConsole.Write(grid);
         if (at is not null && ws.Baseline.GameUpdatedSinceBaseline())
@@ -1062,6 +1063,54 @@ public sealed class RestoreSettingsCommand : Command<RestoreSettingsCommand.Sett
         using var ws = Ctx.Open(s);
         var saved = ws.RestoreSettings(s.Path);
         AnsiConsole.MarkupLine("[green]Restored[/] the baseline copy." + (saved is null ? "" : $" The previous file is saved at {Markup.Escape(saved)}."));
+        return ExitCodes.Ok;
+    }
+}
+
+// ---------- rules ----------
+
+public sealed class RulesShowCommand : Command<HomeSettings>
+{
+    public override int Execute(CommandContext context, HomeSettings s, CancellationToken ct)
+    {
+        using var ws = Ctx.Open(s);
+        var r = ws.Rules;
+        AnsiConsole.MarkupLine($"Rules in effect: [bold]{Markup.Escape(r.Source)}[/] [grey](fingerprint {r.Hash})[/]");
+        var t = new Table().Border(TableBorder.Rounded).AddColumns("Rule", "Title");
+        foreach (var (id, title) in r.Rules) t.AddRow(Markup.Escape(id), Markup.Escape(title));
+        AnsiConsole.Write(t);
+        var lists = new Table().Border(TableBorder.Simple).AddColumns("List", "Entries");
+        void Add(string name, IEnumerable<string> v) => lists.AddRow(name, Markup.Escape(string.Join(", ", v)));
+        Add("frameworks", r.Frameworks);
+        Add("asiLoaders", r.AsiLoaders);
+        Add("hookFiles", r.HookFiles);
+        Add("dotNetApiReferencePrefixes", r.DotNetApiReferencePrefixes);
+        Add("streamExtensions", r.StreamExtensions);
+        Add("dataExtensions", r.DataExtensions);
+        Add("docExtensions", r.DocExtensions);
+        Add("structuralFolders", r.StructuralFolders);
+        Add("signatureFiles", r.SignatureFiles);
+        Add("signatureFolders", r.SignatureFolders);
+        AnsiConsole.Write(lists);
+        AnsiConsole.MarkupLine($"[grey]To change any of these, `saddlebag rules export` and edit {Markup.Escape(Workspace.RulesPath(ws.Home))}; mods are re-routed next time Saddlebag opens.[/]");
+        return ExitCodes.Ok;
+    }
+}
+
+public sealed class RulesExportCommand : Command<RulesExportCommand.Settings>
+{
+    public sealed class Settings : HomeSettings
+    {
+        [CommandOption("--force")] [Description("Overwrite an existing rules.json.")] public bool Force { get; set; }
+    }
+
+    public override int Execute(CommandContext context, Settings s, CancellationToken ct)
+    {
+        using var ws = Ctx.Open(s);
+        var path = Workspace.RulesPath(ws.Home);
+        if (File.Exists(path) && !s.Force) throw new InvalidOperationException($"{path} already exists. Edit it, or pass --force to replace it with the built-in rules.");
+        File.WriteAllText(path, RuleSet.DefaultJson);
+        AnsiConsole.MarkupLine($"Wrote the built-in rules to [bold]{Markup.Escape(path)}[/]. Edit it (you can delete keys you don't change); mods are re-routed next time Saddlebag opens.");
         return ExitCodes.Ok;
     }
 }

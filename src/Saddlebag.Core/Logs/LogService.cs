@@ -21,8 +21,9 @@ public sealed record LogSummary(LogFile File, int Errors, int Warnings, IReadOnl
 /// Finds and reads hook and mod logs. Log names aren't hard-coded: every *.log in the game root, lml/ and scripts/
 /// is a candidate, and the owning mod is inferred from the files that mod deployed.
 /// </summary>
-public sealed partial class LogService(StateStore store, string gameDir, string home)
+public sealed partial class LogService(StateStore store, string gameDir, string home, Routing.RuleSet? rules = null)
 {
+    private readonly Routing.RuleSet _rules = rules ?? Routing.RuleSet.Default;
     private static readonly string[] Areas = ["lml", "scripts"];
     public string ArchiveDir => Path.Combine(home, "logs");
 
@@ -177,7 +178,7 @@ public sealed partial class LogService(StateStore store, string gameDir, string 
         var stems = mods.Keys
             .SelectMany(id => store.GetModFiles(id).Where(f => f.DestPath is not null)
                 .Select(f => (Stem: Path.GetFileNameWithoutExtension(f.DestPath!), Name: mods[id])))
-            .Where(s => s.Stem.Length >= 4 && !Routing.Router.Frameworks.Any(fw => Path.GetFileNameWithoutExtension(fw).Equals(s.Stem, StringComparison.OrdinalIgnoreCase)))
+            .Where(s => s.Stem.Length >= 4 && !_rules.Frameworks.Any(fw => Path.GetFileNameWithoutExtension(fw).Equals(s.Stem, StringComparison.OrdinalIgnoreCase)))
             .DistinctBy(s => s.Stem.ToLowerInvariant())
             .ToList();
         return line => stems.Where(s => line.Contains(s.Stem, StringComparison.OrdinalIgnoreCase)).Select(s => s.Name).Distinct().ToList();

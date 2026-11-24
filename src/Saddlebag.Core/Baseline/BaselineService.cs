@@ -18,20 +18,19 @@ public sealed record VerifyReport(VerifyStatus Status, IReadOnlyList<Finding> Fi
 }
 
 /// <param name="home">Saddlebag's folder. With it, the game's settings files in Documents are captured and checked too.</param>
-public sealed class BaselineService(StateStore store, string gameDir, string? home = null)
+public sealed class BaselineService(StateStore store, string gameDir, string? home = null, Routing.RuleSet? rules = null)
 {
+    private readonly Routing.RuleSet _rules = rules ?? Routing.RuleSet.Default;
     public ExternalSettings? External { get; } = home is null ? null : new ExternalSettings(store, home);
 
-    /// <summary>Files and folders that only exist when something is modded. Matched against the path's file name or first folder.</summary>
-    public static readonly string[] SignatureFiles = ["dinput8.dll", "version.dll", "ScriptHookRDR2.dll", "ScriptHookRDRNetAPI.dll", "vfs.asi", "ScriptHookRDRDotNet.asi"];
-    public static readonly string[] SignatureFolders = ["lml", "scripts"];
-
-    public static bool IsModSignature(string rel)
+    /// <summary>True for files and folders that only exist when something is modded (rules: signatureFiles, signatureFolders).</summary>
+    public static bool IsModSignature(string rel, Routing.RuleSet? rules = null)
     {
+        var r = rules ?? Routing.RuleSet.Default;
         var name = RelPath.FileName(rel);
         if (name.EndsWith(".asi", StringComparison.OrdinalIgnoreCase)) return true;
-        if (SignatureFiles.Contains(name, RelPath.Comparer) && !rel.Contains('/')) return true;
-        return rel.Contains('/') && SignatureFolders.Contains(RelPath.FirstSegment(rel), RelPath.Comparer);
+        if (r.SignatureFiles.Contains(name, RelPath.Comparer) && !rel.Contains('/')) return true;
+        return rel.Contains('/') && r.SignatureFolders.Contains(RelPath.FirstSegment(rel), RelPath.Comparer);
     }
 
     public IEnumerable<string> WalkGame()
@@ -41,7 +40,7 @@ public sealed class BaselineService(StateStore store, string gameDir, string? ho
     }
 
     /// <summary>Signature files sitting in the folder right now; used to refuse a baseline of an install that isn't clean.</summary>
-    public List<string> FindSignatures() => WalkGame().Where(IsModSignature).ToList();
+    public List<string> FindSignatures() => WalkGame().Where(r => IsModSignature(r, _rules)).ToList();
 
     public static string? ReadGameVersion(string gameDir)
     {
@@ -106,7 +105,7 @@ public sealed class BaselineService(StateStore store, string gameDir, string? ho
             {
                 if (deployed.TryGetValue(rel, out var d)) findings.Add(new(FindingKind.Deployed, rel, $"deployed by {d.ModId}"));
                 else if (rule == StateStore.RuleAllow) findings.Add(new(FindingKind.AllowedExtra, rel, "not in baseline; allowed by you"));
-                else if (IsModSignature(rel)) findings.Add(new(FindingKind.ModSignature, rel, "mod file not in baseline"));
+                else if (IsModSignature(rel, _rules)) findings.Add(new(FindingKind.ModSignature, rel, "mod file not in baseline"));
                 else findings.Add(new(FindingKind.Extra, rel, "not in baseline"));
                 return;
             }
@@ -127,7 +126,7 @@ public sealed class BaselineService(StateStore store, string gameDir, string? ho
         foreach (var b in baseline.Values.Where(b => !present.Contains(b.Path)))
             findings.Add(new(FindingKind.Missing, b.Path, "in baseline, not on disk"));
 
-        foreach (var dir in SignatureFolders)
+        foreach (var dir in _rules.SignatureFolders)
             if (Directory.Exists(Path.Combine(gameDir, dir)) && !baseline.Keys.Any(k => RelPath.IsUnder(k, dir)) && !onDisk.Any(k => RelPath.IsUnder(k, dir)))
                 findings.Add(new(FindingKind.ModSignature, dir + "/", "empty mod folder"));
 

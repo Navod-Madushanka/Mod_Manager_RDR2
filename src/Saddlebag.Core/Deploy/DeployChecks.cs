@@ -31,7 +31,6 @@ public static class DeployChecks
     public const string ReplaceTarget = "replace-target";
     public const string BrokenInstallXml = "broken-install-xml";
 
-    public static readonly string[] AsiLoaders = ["dinput8.dll", "version.dll"];
 
     /// <summary>Reads a PE's file version. Swappable so tests don't need signed binaries with version resources.</summary>
     public static Func<string, string?> FileVersion { get; set; } = path =>
@@ -40,13 +39,13 @@ public static class DeployChecks
         catch { return null; }
     };
 
-    public static bool IsSharedSlot(string dest) => !dest.Contains('/') && Router.Frameworks.Contains(dest, RelPath.Comparer);
+    public static bool IsSharedSlot(string dest, RuleSet? rules = null) => !dest.Contains('/') && (rules ?? RuleSet.Default).Frameworks.Contains(dest, RelPath.Comparer);
 
     /// <summary>
     /// Picks the file that lands at each destination. Shared loader slots go to the newest file version (so a mod that
     /// bundles an old dinput8.dll can't downgrade yours); everything else goes to the highest priority.
     /// </summary>
-    public static (Dictionary<string, Candidate> Winners, List<CheckFinding> Findings) Resolve(IEnumerable<Candidate> candidates)
+    public static (Dictionary<string, Candidate> Winners, List<CheckFinding> Findings) Resolve(IEnumerable<Candidate> candidates, RuleSet? rules = null)
     {
         var winners = new Dictionary<string, Candidate>(RelPath.Comparer);
         var findings = new List<CheckFinding>();
@@ -54,7 +53,7 @@ public static class DeployChecks
         {
             var list = group.OrderBy(c => c.Priority).ToList();
             var distinct = list.Select(c => c.Sha256).Distinct().Count();
-            if (IsSharedSlot(group.Key) && list.Count > 1)
+            if (IsSharedSlot(group.Key, rules) && list.Count > 1)
             {
                 var ranked = list.Select(c => (c, v: ParseVersion(FileVersion(c.Source)))).OrderBy(x => x.v).ThenBy(x => x.c.Priority).ToList();
                 var win = ranked[^1].c;
@@ -86,8 +85,9 @@ public static class DeployChecks
     /// <summary>Checks on the final layout: what will be in the game folder after this deploy.</summary>
     /// <param name="winners">Files mods will place.</param>
     /// <param name="untrackedOnDisk">Game-relative files present but not in the ledger and not in the baseline (e.g. a loader you installed by hand).</param>
-    public static List<CheckFinding> Layout(IReadOnlyDictionary<string, Candidate> winners, ISet<string> untrackedOnDisk, bool gameUpdated)
+    public static List<CheckFinding> Layout(IReadOnlyDictionary<string, Candidate> winners, ISet<string> untrackedOnDisk, bool gameUpdated, RuleSet? rules = null)
     {
+        var asiLoaders = (rules ?? RuleSet.Default).AsiLoaders;
         var findings = new List<CheckFinding>();
         bool Has(string rootFile) => winners.ContainsKey(rootFile) || untrackedOnDisk.Contains(rootFile);
         string Who(Func<Candidate, bool> pred) => string.Join(", ", winners.Values.Where(pred).Select(c => c.ModName).Distinct());
@@ -120,7 +120,7 @@ public static class DeployChecks
                 "Install LML as a mod: `saddlebag install <LML archive>`."));
 
         var needsHook = asis.Count > 0 || usesLml || scripts.Count > 0;
-        if ((asis.Count > 0 || usesLml) && !AsiLoaders.Any(Has))
+        if ((asis.Count > 0 || usesLml) && !asiLoaders.Any(Has))
             findings.Add(new(MissingAsiLoader, Severity.Block, $"{(asis.Count > 0 ? Who(c => asis.Contains(c)) : "LML")} need an ASI loader (dinput8.dll), which isn't installed or enabled.",
                 "Install Script Hook RDR2 (it ships dinput8.dll) as a mod."));
         if (needsHook && !Has("ScriptHookRDR2.dll"))

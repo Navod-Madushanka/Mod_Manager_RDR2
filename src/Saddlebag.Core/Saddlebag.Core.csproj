@@ -14,6 +14,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Routing\rules.default.json" LogicalName="Saddlebag.Core.Routing.rules.default.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="Saddlebag.Tests" />
   </ItemGroup>
 

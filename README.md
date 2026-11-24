@@ -95,6 +95,8 @@ All logic lives in `Saddlebag.App.ViewModels`, so the GUI's behaviour is tested 
 | `watch [mods] [--quiet 1500]` | Redeploy linked build folders after every build (see below) |
 | `lml-pack <mod> [--map SRC=update:/...]` | Package a loose mod as an LML mod with a generated install.xml (see below); `--off` undoes it |
 | `deploy --ignore-deps` | Deploy past a failed dependency check (e.g. an .asi that truly needs no Script Hook) |
+| `rules`, `rules export` | Show the routing data in effect; write it to `rules.json` to edit |
+| `restore-settings <path>` | Put a game settings file in Documents back to its baseline copy |
 | `status`, `list`, `enable`, `disable`, `remove` | Housekeeping |
 
 ## How safety works
@@ -124,6 +126,8 @@ Rule ids match the build plan's table and are shown in every preview. Overrides 
 | 11 | Anything else | Asks |
 
 Wrapper folders are stripped first. Archive entries that point outside the mod folder (zip-slip) are rejected.
+
+The data behind these rules is in `rules.json`, not code: loader and hook names (`frameworks`, `asiLoaders`, `hookFiles`), the .NET API name prefixes, stream, data and doc extensions, folder names that carry meaning, mod-signature files and folders, and every rule's title and "why" text. The built-in copy ships inside Saddlebag. To change something, run `saddlebag rules export` (or Settings → Export rules in the GUI), edit `rules.json` in your Saddlebag folder, and keep only the keys you change: lists replace the built-in list, titles and reasons merge. Every mod is re-routed the next time Saddlebag opens, and a mistake in the file is reported with its name instead of being ignored.
 
 ## Checks
 
@@ -228,7 +232,6 @@ Phases 1 and 2 are in place, plus Phase 4's crash bisect, install.xml generation
 
 Not done yet:
 
-- Rules live in `Router.cs`, not `rules.json`.
 - Rule 7's "files with a known game path" isn't implemented (needs a game-path index).
 - The Windows paths (`CreateHardLinkW`, case-insensitive NTFS, launcher process names, PE file versions of real hook DLLs) need a run on the real install.
 

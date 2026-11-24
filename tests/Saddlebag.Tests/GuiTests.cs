@@ -465,4 +465,16 @@ public class GuiTests : IDisposable
         Assert.Empty(_shell.Mode.Findings);
         Assert.Contains("saved", _shell.StatusText);
     }
+
+    [Fact]
+    public async Task Settings_page_exports_rules_and_shows_where_they_come_from()
+    {
+        await SetUpAsync();
+        Assert.Equal("Routing rules: built-in.", _shell.Settings.RulesText);
+        await _shell.Settings.ExportRulesCommand.ExecuteAsync(null);
+        var path = Saddlebag.Core.Workspace.RulesPath(_sb.Home);
+        Assert.Equal(Saddlebag.Core.Routing.RuleSet.DefaultJson, File.ReadAllText(path));
+        Assert.Contains("restart", _shell.StatusText);
+        NoErrors();
+    }
 }

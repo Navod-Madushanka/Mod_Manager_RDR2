@@ -24,6 +24,9 @@ public sealed class Workspace : IDisposable
     public Deployer Deployer { get; }
     public IGameGuard Guard { get; }
     public Logs.LogService Logs { get; }
+    /// <summary>Routing data in effect: built in, plus the Saddlebag folder's rules.json if there is one.</summary>
+    public RuleSet Rules { get; }
+    public static string RulesPath(string home) => Path.Combine(home, "rules.json");
 
     private Workspace(string home, string gameDir, StateStore store, IGameGuard guard)
     {
@@ -31,13 +34,32 @@ public sealed class Workspace : IDisposable
         GameDir = gameDir;
         Store = store;
         Guard = guard;
-        Library = new ModLibrary(store, home, new Router());
-        Baseline = new BaselineService(store, gameDir, home);
-        Deployer = new Deployer(store, Library, home, gameDir);
-        Logs = new Logs.LogService(store, gameDir, home);
+        Rules = RuleSet.Load(RulesPath(home));
+        Library = new ModLibrary(store, home, new Router(Rules));
+        Baseline = new BaselineService(store, gameDir, home, Rules);
+        Deployer = new Deployer(store, Library, home, gameDir, Rules);
+        Logs = new Logs.LogService(store, gameDir, home, Rules);
+        RerouteIfRulesChanged();
     }
 
     public static string DbPath(string home) => Path.Combine(home, "state.db");
+
+    /// <summary>
+    /// Routing decisions are stored per mod; when the effective rules change (you edited rules.json, or a new build
+    /// ships new defaults), re-route every mod so plans never use stale decisions. A mod that fails keeps its old routing.
+    /// </summary>
+    public List<string> RerouteIfRulesChanged()
+    {
+        var failures = new List<string>();
+        if (Store.GetSetting("rules_hash") == Rules.Hash) return failures;
+        foreach (var m in Store.GetMods())
+        {
+            try { Library.Reroute(m.Id); }
+            catch (Exception e) when (e is InvalidOperationException or IOException) { failures.Add($"{m.Name}: {e.Message}"); }
+        }
+        Store.SetSetting("rules_hash", Rules.Hash);
+        return failures;
+    }
 
     public static Workspace Init(string home, string gameDir, IGameGuard? guard = null)
     {
@@ -198,8 +220,6 @@ public sealed class Workspace : IDisposable
     private const string BisectKey = "bisect";
     private static readonly JsonSerializerOptions BisectJson = new() { Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } };
 
-    /// <summary>Hooks and loaders other mods depend on; turning them off would block or break the rest.</summary>
-    public static readonly string[] HookFiles = ["ScriptHookRDR2.dll", "vfs.asi", "ScriptHookRDRDotNet.asi"];
 
     public BisectSession? LoadBisect() =>
         Store.GetSetting(BisectKey) is { Length: > 0 } json ? JsonSerializer.Deserialize<BisectSession>(json, BisectJson) : null;
@@ -214,7 +234,7 @@ public sealed class Workspace : IDisposable
 
     /// <summary>Mods that ship a hook (Script Hook, LML, the .NET hook) and stay on by default.</summary>
     public bool IsHookMod(string modId) =>
-        Store.GetModFiles(modId).Any(f => f.DestPath is not null && HookFiles.Contains(f.DestPath, RelPath.Comparer));
+        Store.GetModFiles(modId).Any(f => f.DestPath is not null && Rules.HookFiles.Contains(f.DestPath, RelPath.Comparer));
 
     /// <summary>
     /// Starts a bisect over the active profile's enabled mods. Works in a temporary copy of the profile, so your
@@ -313,7 +333,7 @@ public sealed class Workspace : IDisposable
     {
         var baselineDirs = Store.GetBaseline().SelectMany(b => Enumerable.Range(1, b.Path.Count(c => c == '/'))
             .Select(n => string.Join('/', b.Path.Split('/').Take(n)))).ToHashSet(RelPath.Comparer);
-        foreach (var area in BaselineService.SignatureFolders)
+        foreach (var area in Rules.SignatureFolders)
         {
             var full = Path.Combine(GameDir, area);
             if (!Directory.Exists(full) || baselineDirs.Contains(area)) continue;

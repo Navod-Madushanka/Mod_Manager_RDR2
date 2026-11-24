@@ -56,6 +56,7 @@ public sealed partial class SettingsViewModel(ShellViewModel shell) : PageViewMo
     [ObservableProperty] private string? _paths;
     [ObservableProperty] private double _progress;
     [ObservableProperty] private bool _capturing;
+    [ObservableProperty] private string? _rulesText;
     public ObservableCollection<PathRuleRow> Rules { get; } = [];
 
     public override async Task RefreshAsync()
@@ -63,11 +64,16 @@ public sealed partial class SettingsViewModel(ShellViewModel shell) : PageViewMo
         var info = await Host.Run(ws =>
         {
             var (version, at) = ws.Store.GetBaselineInfo();
-            return (Count: ws.Store.BaselineCount(), version, at, ws.Home, ws.GameDir, Rules: ws.Store.GetPathRules());
+            return (Count: ws.Store.BaselineCount(), version, at, ws.Home, ws.GameDir, Rules: ws.Store.GetPathRules(),
+                RuleSource: ws.Rules.Source, Settings: ws.Baseline.External?.Records().Count ?? 0);
         });
         BaselineText = info.at is null
             ? "No baseline yet."
-            : $"{info.Count} files, captured {info.at:yyyy-MM-dd HH:mm} UTC, game {info.version ?? "?"}.";
+            : $"{info.Count} files, captured {info.at:yyyy-MM-dd HH:mm} UTC, game {info.version ?? "?"}." +
+              (info.Settings > 0 ? $" Plus {info.Settings} game settings file(s) from Documents." : "");
+        RulesText = info.RuleSource == "built-in"
+            ? "Routing rules: built-in."
+            : $"Routing rules: your file {info.RuleSource}.";
         Paths = $"Game: {info.GameDir}\nSaddlebag: {info.Home}";
         Rules.Clear();
         foreach (var (p, r) in info.Rules.OrderBy(kv => kv.Key)) Rules.Add(new PathRuleRow(p, r == StateStore.RuleAllow ? "allowed extra" : "expected to change"));
@@ -93,6 +99,16 @@ public sealed partial class SettingsViewModel(ShellViewModel shell) : PageViewMo
         }
         finally { Capturing = false; }
         await Shell.RefreshAllAsync();
+    });
+
+    /// <summary>Writes the built-in rules to rules.json in the Saddlebag folder for editing. Takes effect next start.</summary>
+    [RelayCommand]
+    private Task ExportRulesAsync() => Guard(async () =>
+    {
+        var path = await Host.Run(ws => Core.Workspace.RulesPath(ws.Home));
+        if (File.Exists(path) && !await Dialogs.ConfirmAsync("Export rules", $"{path} already exists. Replace it with the built-in rules?")) return;
+        await File.WriteAllTextAsync(path, Core.Routing.RuleSet.DefaultJson);
+        Shell.StatusText = $"Wrote {path}. Edit it, then restart Saddlebag; mods are re-routed on start.";
     });
 
     [RelayCommand]
